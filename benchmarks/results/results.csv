@@ -1,0 +1,7 @@
+system,recall@1,recall@3,recall@5,mrr,ndcg@5,median_ts_error_s,p95_ts_error_s,correct_abstentions
+exact-only,0.276,0.276,0.276,0.276,0.260,0.00,0.00,1.000
+lexical-only,0.759,0.793,0.828,0.779,0.765,9.00,27.00,0.000
+hybrid-no-dense,0.759,0.828,0.828,0.787,0.761,0.00,27.00,0.000
+dense-only,0.931,1.000,1.000,0.966,0.950,3.00,22.00,0.000
+hybrid-full,0.966,1.000,1.000,0.983,0.951,0.00,9.00,0.000
+hybrid-full-no-refinement,0.966,1.000,1.000,0.983,0.969,2.00,22.00,0.000

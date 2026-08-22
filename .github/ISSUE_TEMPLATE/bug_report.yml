@@ -1,0 +1,69 @@
+name: Bug report
+description: Report a reproducible RecallTube problem
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve RecallTube. Do not include private transcript text, cookies, tokens, or account details.
+  - type: input
+    id: version
+    attributes:
+      label: RecallTube version or commit
+      placeholder: 0.2.0 or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options:
+        - Chrome
+        - Edge
+        - Chromium development build
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: browser_version
+    attributes:
+      label: Browser version
+      placeholder: 140.0.0.0
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Include what you expected and what RecallTube showed instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Open a public YouTube URL
+        2. Open RecallTube
+        3. Search for ...
+    validations:
+      required: true
+  - type: input
+    id: video
+    attributes:
+      label: Public video URL, if relevant
+      description: Leave blank if the video is private or sensitive.
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: RecallTube diagnostics
+      description: Use “Copy diagnostics” in settings. It excludes transcript text.
+      render: json
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I removed cookies, tokens, account data, and transcript text from this report.
+          required: true
