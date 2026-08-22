@@ -1,0 +1,2678 @@
+{
+  "generatedAt": "2026-08-01T09:49:45.078Z",
+  "dataset": {
+    "transcripts": [
+      {
+        "id": "en-rag-talk",
+        "language": "en",
+        "kind": "manual",
+        "cues": 25,
+        "durationSeconds": 146
+      },
+      {
+        "id": "ar-privacy-talk",
+        "language": "ar",
+        "kind": "manual",
+        "cues": 13,
+        "durationSeconds": 78
+      },
+      {
+        "id": "fr-ml-talk",
+        "language": "fr",
+        "kind": "manual",
+        "cues": 11,
+        "durationSeconds": 66
+      },
+      {
+        "id": "en-asr-talk",
+        "language": "en",
+        "kind": "asr",
+        "cues": 12,
+        "durationSeconds": 60
+      }
+    ],
+    "queries": 31,
+    "categories": [
+      "acronym",
+      "ar-over-en",
+      "arabic",
+      "asr-error",
+      "boundary",
+      "cross-language",
+      "en-over-ar",
+      "en-over-fr",
+      "exact",
+      "fr-over-en",
+      "homophone",
+      "long-question",
+      "missing-punctuation",
+      "misspelling",
+      "mixed-language",
+      "named-entity",
+      "negation",
+      "no-answer",
+      "normalization",
+      "paraphrase",
+      "repeated",
+      "short",
+      "vague"
+    ]
+  },
+  "systems": [
+    {
+      "system": "exact-only",
+      "description": "Normalized phrase matching over the flattened transcript.",
+      "metrics": {
+        "queries": 31,
+        "recallAt1": 0.27586206896551724,
+        "recallAt3": 0.27586206896551724,
+        "recallAt5": 0.27586206896551724,
+        "mrr": 0.27586206896551724,
+        "ndcgAt5": 0.2600669699820699,
+        "medianTimestampError": 0,
+        "p95TimestampError": 0,
+        "correctAbstentions": 1
+      },
+      "outcomes": [
+        {
+          "queryId": "q-exact-1",
+          "categories": [
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-exact-2",
+          "categories": [
+            "exact",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-boundary-1",
+          "categories": [
+            "boundary",
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-para-1",
+          "categories": [
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-para-2",
+          "categories": [
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-para-3",
+          "categories": [
+            "paraphrase",
+            "negation"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-vague-1",
+          "categories": [
+            "vague"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-vague-2",
+          "categories": [
+            "vague"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-typo-1",
+          "categories": [
+            "misspelling"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-typo-2",
+          "categories": [
+            "misspelling"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-asr-1",
+          "categories": [
+            "asr-error",
+            "homophone"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-asr-2",
+          "categories": [
+            "asr-error",
+            "acronym"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-asr-3",
+          "categories": [
+            "asr-error",
+            "acronym"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-nopunct-1",
+          "categories": [
+            "missing-punctuation",
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-entity-1",
+          "categories": [
+            "named-entity",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-repeat-1",
+          "categories": [
+            "repeated",
+            "acronym",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-repeat-2",
+          "categories": [
+            "repeated"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-long-1",
+          "categories": [
+            "long-question"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-none-1",
+          "categories": [
+            "no-answer"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-none-2",
+          "categories": [
+            "no-answer"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-ar-1",
+          "categories": [
+            "arabic",
+            "exact",
+            "normalization"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-ar-2",
+          "categories": [
+            "arabic",
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-ar-3",
+          "categories": [
+            "arabic",
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-en-ar-1",
+          "categories": [
+            "cross-language",
+            "en-over-ar"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-en-ar-2",
+          "categories": [
+            "cross-language",
+            "en-over-ar"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-ar-en-1",
+          "categories": [
+            "cross-language",
+            "ar-over-en"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-ar-en-2",
+          "categories": [
+            "cross-language",
+            "ar-over-en"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-fr-en-1",
+          "categories": [
+            "cross-language",
+            "en-over-fr"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-fr-en-2",
+          "categories": [
+            "cross-language",
+            "en-over-fr"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-en-fr-1",
+          "categories": [
+            "cross-language",
+            "fr-over-en"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-mixed-1",
+          "categories": [
+            "mixed-language"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        }
+      ]
+    },
+    {
+      "system": "lexical-only",
+      "description": "BM25 plus character n-grams over context chunks.",
+      "metrics": {
+        "queries": 31,
+        "recallAt1": 0.7586206896551724,
+        "recallAt3": 0.7931034482758621,
+        "recallAt5": 0.8275862068965517,
+        "mrr": 0.778735632183908,
+        "ndcgAt5": 0.7651081651737136,
+        "medianTimestampError": 9,
+        "p95TimestampError": 27,
+        "correctAbstentions": 0
+      },
+      "outcomes": [
+        {
+          "queryId": "q-exact-1",
+          "categories": [
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-exact-2",
+          "categories": [
+            "exact",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 21,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-boundary-1",
+          "categories": [
+            "boundary",
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 12,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-para-1",
+          "categories": [
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 23,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-para-2",
+          "categories": [
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 21,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-para-3",
+          "categories": [
+            "paraphrase",
+            "negation"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 21,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-vague-1",
+          "categories": [
+            "vague"
+          ],
+          "rankOfFirstRelevant": 3,
+          "timestampErrorSeconds": 42,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-vague-2",
+          "categories": [
+            "vague"
+          ],
+          "rankOfFirstRelevant": 4,
+          "timestampErrorSeconds": 95,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-typo-1",
+          "categories": [
+            "misspelling"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-typo-2",
+          "categories": [
+            "misspelling"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 27,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-asr-1",
+          "categories": [
+            "asr-error",
+            "homophone"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 2,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-asr-2",
+          "categories": [
+            "asr-error",
+            "acronym"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 7,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-asr-3",
+          "categories": [
+            "asr-error",
+            "acronym"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 22,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-nopunct-1",
+          "categories": [
+            "missing-punctuation",
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 3,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-entity-1",
+          "categories": [
+            "named-entity",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-repeat-1",
+          "categories": [
+            "repeated",
+            "acronym",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 15,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-repeat-2",
+          "categories": [
+            "repeated"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-long-1",
+          "categories": [
+            "long-question"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 3,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-none-1",
+          "categories": [
+            "no-answer"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-none-2",
+          "categories": [
+            "no-answer"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-ar-1",
+          "categories": [
+            "arabic",
+            "exact",
+            "normalization"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-ar-2",
+          "categories": [
+            "arabic",
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 21,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-ar-3",
+          "categories": [
+            "arabic",
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 3,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-x-en-ar-1",
+          "categories": [
+            "cross-language",
+            "en-over-ar"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-en-ar-2",
+          "categories": [
+            "cross-language",
+            "en-over-ar"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-ar-en-1",
+          "categories": [
+            "cross-language",
+            "ar-over-en"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-ar-en-2",
+          "categories": [
+            "cross-language",
+            "ar-over-en"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-fr-en-1",
+          "categories": [
+            "cross-language",
+            "en-over-fr"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-fr-en-2",
+          "categories": [
+            "cross-language",
+            "en-over-fr"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-x-en-fr-1",
+          "categories": [
+            "cross-language",
+            "fr-over-en"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 27,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-mixed-1",
+          "categories": [
+            "mixed-language"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 1
+        }
+      ]
+    },
+    {
+      "system": "hybrid-no-dense",
+      "description": "Exact + lexical fused with weighted RRF, then timestamp-refined. This is what a user gets before enabling the model.",
+      "metrics": {
+        "queries": 31,
+        "recallAt1": 0.7586206896551724,
+        "recallAt3": 0.8275862068965517,
+        "recallAt5": 0.8275862068965517,
+        "mrr": 0.7873563218390804,
+        "ndcgAt5": 0.7611439199588936,
+        "medianTimestampError": 0,
+        "p95TimestampError": 27,
+        "correctAbstentions": 0
+      },
+      "outcomes": [
+        {
+          "queryId": "q-exact-1",
+          "categories": [
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-exact-2",
+          "categories": [
+            "exact",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-boundary-1",
+          "categories": [
+            "boundary",
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-para-1",
+          "categories": [
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-para-2",
+          "categories": [
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 10.5,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-para-3",
+          "categories": [
+            "paraphrase",
+            "negation"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-vague-1",
+          "categories": [
+            "vague"
+          ],
+          "rankOfFirstRelevant": 2,
+          "timestampErrorSeconds": 46.5,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-vague-2",
+          "categories": [
+            "vague"
+          ],
+          "rankOfFirstRelevant": 3,
+          "timestampErrorSeconds": 95,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-typo-1",
+          "categories": [
+            "misspelling"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-typo-2",
+          "categories": [
+            "misspelling"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-asr-1",
+          "categories": [
+            "asr-error",
+            "homophone"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-asr-2",
+          "categories": [
+            "asr-error",
+            "acronym"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-asr-3",
+          "categories": [
+            "asr-error",
+            "acronym"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-nopunct-1",
+          "categories": [
+            "missing-punctuation",
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-entity-1",
+          "categories": [
+            "named-entity",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-repeat-1",
+          "categories": [
+            "repeated",
+            "acronym",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-repeat-2",
+          "categories": [
+            "repeated"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-long-1",
+          "categories": [
+            "long-question"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-none-1",
+          "categories": [
+            "no-answer"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-none-2",
+          "categories": [
+            "no-answer"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-ar-1",
+          "categories": [
+            "arabic",
+            "exact",
+            "normalization"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-ar-2",
+          "categories": [
+            "arabic",
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-ar-3",
+          "categories": [
+            "arabic",
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-x-en-ar-1",
+          "categories": [
+            "cross-language",
+            "en-over-ar"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-en-ar-2",
+          "categories": [
+            "cross-language",
+            "en-over-ar"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-ar-en-1",
+          "categories": [
+            "cross-language",
+            "ar-over-en"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-ar-en-2",
+          "categories": [
+            "cross-language",
+            "ar-over-en"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-fr-en-1",
+          "categories": [
+            "cross-language",
+            "en-over-fr"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 0
+        },
+        {
+          "queryId": "q-x-fr-en-2",
+          "categories": [
+            "cross-language",
+            "en-over-fr"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-x-en-fr-1",
+          "categories": [
+            "cross-language",
+            "fr-over-en"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 27,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-mixed-1",
+          "categories": [
+            "mixed-language"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 1
+        }
+      ]
+    },
+    {
+      "system": "dense-only",
+      "description": "Dense retrieval alone (Xenova/multilingual-e5-small (q8), webgpu).",
+      "metrics": {
+        "queries": 31,
+        "recallAt1": 0.9310344827586207,
+        "recallAt3": 1,
+        "recallAt5": 1,
+        "mrr": 0.9655172413793104,
+        "ndcgAt5": 0.9504651430952082,
+        "medianTimestampError": 3,
+        "p95TimestampError": 22,
+        "correctAbstentions": 0
+      },
+      "outcomes": [
+        {
+          "queryId": "q-exact-1",
+          "categories": [
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-exact-2",
+          "categories": [
+            "exact",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 21,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-boundary-1",
+          "categories": [
+            "boundary",
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 12,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-para-1",
+          "categories": [
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 23,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-para-2",
+          "categories": [
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-para-3",
+          "categories": [
+            "paraphrase",
+            "negation"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 21,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-vague-1",
+          "categories": [
+            "vague"
+          ],
+          "rankOfFirstRelevant": 2,
+          "timestampErrorSeconds": 12,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-vague-2",
+          "categories": [
+            "vague"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-typo-1",
+          "categories": [
+            "misspelling"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-typo-2",
+          "categories": [
+            "misspelling"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-asr-1",
+          "categories": [
+            "asr-error",
+            "homophone"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 2,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-asr-2",
+          "categories": [
+            "asr-error",
+            "acronym"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 7,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-asr-3",
+          "categories": [
+            "asr-error",
+            "acronym"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 22,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-nopunct-1",
+          "categories": [
+            "missing-punctuation",
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 3,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-entity-1",
+          "categories": [
+            "named-entity",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-repeat-1",
+          "categories": [
+            "repeated",
+            "acronym",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 15,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-repeat-2",
+          "categories": [
+            "repeated"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-long-1",
+          "categories": [
+            "long-question"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 3,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-none-1",
+          "categories": [
+            "no-answer"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-none-2",
+          "categories": [
+            "no-answer"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-ar-1",
+          "categories": [
+            "arabic",
+            "exact",
+            "normalization"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-ar-2",
+          "categories": [
+            "arabic",
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 2,
+          "timestampErrorSeconds": 24,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-ar-3",
+          "categories": [
+            "arabic",
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 3,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-x-en-ar-1",
+          "categories": [
+            "cross-language",
+            "en-over-ar"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-x-en-ar-2",
+          "categories": [
+            "cross-language",
+            "en-over-ar"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-x-ar-en-1",
+          "categories": [
+            "cross-language",
+            "ar-over-en"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-x-ar-en-2",
+          "categories": [
+            "cross-language",
+            "ar-over-en"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-x-fr-en-1",
+          "categories": [
+            "cross-language",
+            "en-over-fr"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-x-fr-en-2",
+          "categories": [
+            "cross-language",
+            "en-over-fr"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-x-en-fr-1",
+          "categories": [
+            "cross-language",
+            "fr-over-en"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-mixed-1",
+          "categories": [
+            "mixed-language"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 3
+        }
+      ]
+    },
+    {
+      "system": "hybrid-full",
+      "description": "Exact + lexical + dense fused with weighted RRF, then timestamp-refined (Xenova/multilingual-e5-small (q8), webgpu).",
+      "metrics": {
+        "queries": 31,
+        "recallAt1": 0.9655172413793104,
+        "recallAt3": 1,
+        "recallAt5": 1,
+        "mrr": 0.9827586206896551,
+        "ndcgAt5": 0.9507990923726868,
+        "medianTimestampError": 0,
+        "p95TimestampError": 9,
+        "correctAbstentions": 0
+      },
+      "outcomes": [
+        {
+          "queryId": "q-exact-1",
+          "categories": [
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-exact-2",
+          "categories": [
+            "exact",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-boundary-1",
+          "categories": [
+            "boundary",
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-para-1",
+          "categories": [
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-para-2",
+          "categories": [
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-para-3",
+          "categories": [
+            "paraphrase",
+            "negation"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-vague-1",
+          "categories": [
+            "vague"
+          ],
+          "rankOfFirstRelevant": 2,
+          "timestampErrorSeconds": 40.5,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-vague-2",
+          "categories": [
+            "vague"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-typo-1",
+          "categories": [
+            "misspelling"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-typo-2",
+          "categories": [
+            "misspelling"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-asr-1",
+          "categories": [
+            "asr-error",
+            "homophone"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-asr-2",
+          "categories": [
+            "asr-error",
+            "acronym"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-asr-3",
+          "categories": [
+            "asr-error",
+            "acronym"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-nopunct-1",
+          "categories": [
+            "missing-punctuation",
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-entity-1",
+          "categories": [
+            "named-entity",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-repeat-1",
+          "categories": [
+            "repeated",
+            "acronym",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-repeat-2",
+          "categories": [
+            "repeated"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-long-1",
+          "categories": [
+            "long-question"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 5
+        },
+        {
+          "queryId": "q-none-1",
+          "categories": [
+            "no-answer"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-none-2",
+          "categories": [
+            "no-answer"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-ar-1",
+          "categories": [
+            "arabic",
+            "exact",
+            "normalization"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-ar-2",
+          "categories": [
+            "arabic",
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-ar-3",
+          "categories": [
+            "arabic",
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-x-en-ar-1",
+          "categories": [
+            "cross-language",
+            "en-over-ar"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-x-en-ar-2",
+          "categories": [
+            "cross-language",
+            "en-over-ar"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-x-ar-en-1",
+          "categories": [
+            "cross-language",
+            "ar-over-en"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-x-ar-en-2",
+          "categories": [
+            "cross-language",
+            "ar-over-en"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-x-fr-en-1",
+          "categories": [
+            "cross-language",
+            "en-over-fr"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-x-fr-en-2",
+          "categories": [
+            "cross-language",
+            "en-over-fr"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-x-en-fr-1",
+          "categories": [
+            "cross-language",
+            "fr-over-en"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 27,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-mixed-1",
+          "categories": [
+            "mixed-language"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 2
+        }
+      ],
+      "timings": {
+        "coldIndexMsIncludingModelLoad": 14856,
+        "indexMs.en-rag-talk": 14856,
+        "indexMsPerChunk.en-rag-talk": 2971.1,
+        "warmQueryMedianMs.en-rag-talk": 308.7,
+        "indexMs.ar-privacy-talk": 904,
+        "indexMsPerChunk.ar-privacy-talk": 301.4,
+        "warmQueryMedianMs.ar-privacy-talk": 454.1,
+        "indexMs.fr-ml-talk": 756,
+        "indexMsPerChunk.fr-ml-talk": 377.85,
+        "warmQueryMedianMs.fr-ml-talk": 459.1,
+        "indexMs.en-asr-talk": 765,
+        "indexMsPerChunk.en-asr-talk": 382.35,
+        "warmQueryMedianMs.en-asr-talk": 452.9
+      }
+    },
+    {
+      "system": "hybrid-full-no-refinement",
+      "description": "Identical to hybrid-full but seeking to the retrieved chunk start.",
+      "metrics": {
+        "queries": 31,
+        "recallAt1": 0.9655172413793104,
+        "recallAt3": 1,
+        "recallAt5": 1,
+        "mrr": 0.9827586206896551,
+        "ndcgAt5": 0.9691919588418998,
+        "medianTimestampError": 2,
+        "p95TimestampError": 22,
+        "correctAbstentions": 0
+      },
+      "outcomes": [
+        {
+          "queryId": "q-exact-1",
+          "categories": [
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-exact-2",
+          "categories": [
+            "exact",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-boundary-1",
+          "categories": [
+            "boundary",
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-para-1",
+          "categories": [
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 23,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-para-2",
+          "categories": [
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-para-3",
+          "categories": [
+            "paraphrase",
+            "negation"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 21,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-vague-1",
+          "categories": [
+            "vague"
+          ],
+          "rankOfFirstRelevant": 2,
+          "timestampErrorSeconds": 12,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-vague-2",
+          "categories": [
+            "vague"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-typo-1",
+          "categories": [
+            "misspelling"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-typo-2",
+          "categories": [
+            "misspelling"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-asr-1",
+          "categories": [
+            "asr-error",
+            "homophone"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 2,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-asr-2",
+          "categories": [
+            "asr-error",
+            "acronym"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 7,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-asr-3",
+          "categories": [
+            "asr-error",
+            "acronym"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 22,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-nopunct-1",
+          "categories": [
+            "missing-punctuation",
+            "exact"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-entity-1",
+          "categories": [
+            "named-entity",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-repeat-1",
+          "categories": [
+            "repeated",
+            "acronym",
+            "short"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-repeat-2",
+          "categories": [
+            "repeated"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-long-1",
+          "categories": [
+            "long-question"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 3,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-none-1",
+          "categories": [
+            "no-answer"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-none-2",
+          "categories": [
+            "no-answer"
+          ],
+          "rankOfFirstRelevant": null,
+          "timestampErrorSeconds": null,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-ar-1",
+          "categories": [
+            "arabic",
+            "exact",
+            "normalization"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-ar-2",
+          "categories": [
+            "arabic",
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 21,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-ar-3",
+          "categories": [
+            "arabic",
+            "paraphrase"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 3,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-x-en-ar-1",
+          "categories": [
+            "cross-language",
+            "en-over-ar"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-x-en-ar-2",
+          "categories": [
+            "cross-language",
+            "en-over-ar"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-x-ar-en-1",
+          "categories": [
+            "cross-language",
+            "ar-over-en"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-x-ar-en-2",
+          "categories": [
+            "cross-language",
+            "ar-over-en"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 4
+        },
+        {
+          "queryId": "q-x-fr-en-1",
+          "categories": [
+            "cross-language",
+            "en-over-fr"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 1
+        },
+        {
+          "queryId": "q-x-fr-en-2",
+          "categories": [
+            "cross-language",
+            "en-over-fr"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 0,
+          "returnedCount": 2
+        },
+        {
+          "queryId": "q-x-en-fr-1",
+          "categories": [
+            "cross-language",
+            "fr-over-en"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 27,
+          "returnedCount": 3
+        },
+        {
+          "queryId": "q-mixed-1",
+          "categories": [
+            "mixed-language"
+          ],
+          "rankOfFirstRelevant": 1,
+          "timestampErrorSeconds": 9,
+          "returnedCount": 2
+        }
+      ]
+    }
+  ],
+  "byCategory": [
+    {
+      "system": "exact-only",
+      "categories": {
+        "acronym": {
+          "queries": 3,
+          "recallAt1": 0.3333333333333333,
+          "recallAt3": 0.3333333333333333
+        },
+        "ar-over-en": {
+          "queries": 2,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "arabic": {
+          "queries": 3,
+          "recallAt1": 0.3333333333333333,
+          "recallAt3": 0.3333333333333333
+        },
+        "asr-error": {
+          "queries": 3,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "boundary": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "cross-language": {
+          "queries": 7,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "en-over-ar": {
+          "queries": 2,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "en-over-fr": {
+          "queries": 2,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "exact": {
+          "queries": 5,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "fr-over-en": {
+          "queries": 1,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "homophone": {
+          "queries": 1,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "long-question": {
+          "queries": 1,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "missing-punctuation": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "misspelling": {
+          "queries": 2,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "mixed-language": {
+          "queries": 1,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "named-entity": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "negation": {
+          "queries": 1,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "no-answer": null,
+        "normalization": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "paraphrase": {
+          "queries": 5,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "repeated": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "short": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "vague": {
+          "queries": 2,
+          "recallAt1": 0,
+          "recallAt3": 0
+        }
+      }
+    },
+    {
+      "system": "lexical-only",
+      "categories": {
+        "acronym": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "ar-over-en": {
+          "queries": 2,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "arabic": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "asr-error": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "boundary": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "cross-language": {
+          "queries": 7,
+          "recallAt1": 0.2857142857142857,
+          "recallAt3": 0.2857142857142857
+        },
+        "en-over-ar": {
+          "queries": 2,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "en-over-fr": {
+          "queries": 2,
+          "recallAt1": 0.5,
+          "recallAt3": 0.5
+        },
+        "exact": {
+          "queries": 5,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "fr-over-en": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "homophone": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "long-question": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "missing-punctuation": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "misspelling": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "mixed-language": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "named-entity": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "negation": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "no-answer": null,
+        "normalization": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "paraphrase": {
+          "queries": 5,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "repeated": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "short": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "vague": {
+          "queries": 2,
+          "recallAt1": 0,
+          "recallAt3": 0.5
+        }
+      }
+    },
+    {
+      "system": "hybrid-no-dense",
+      "categories": {
+        "acronym": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "ar-over-en": {
+          "queries": 2,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "arabic": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "asr-error": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "boundary": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "cross-language": {
+          "queries": 7,
+          "recallAt1": 0.2857142857142857,
+          "recallAt3": 0.2857142857142857
+        },
+        "en-over-ar": {
+          "queries": 2,
+          "recallAt1": 0,
+          "recallAt3": 0
+        },
+        "en-over-fr": {
+          "queries": 2,
+          "recallAt1": 0.5,
+          "recallAt3": 0.5
+        },
+        "exact": {
+          "queries": 5,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "fr-over-en": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "homophone": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "long-question": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "missing-punctuation": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "misspelling": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "mixed-language": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "named-entity": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "negation": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "no-answer": null,
+        "normalization": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "paraphrase": {
+          "queries": 5,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "repeated": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "short": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "vague": {
+          "queries": 2,
+          "recallAt1": 0,
+          "recallAt3": 1
+        }
+      }
+    },
+    {
+      "system": "dense-only",
+      "categories": {
+        "acronym": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "ar-over-en": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "arabic": {
+          "queries": 3,
+          "recallAt1": 0.6666666666666666,
+          "recallAt3": 1
+        },
+        "asr-error": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "boundary": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "cross-language": {
+          "queries": 7,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "en-over-ar": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "en-over-fr": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "exact": {
+          "queries": 5,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "fr-over-en": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "homophone": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "long-question": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "missing-punctuation": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "misspelling": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "mixed-language": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "named-entity": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "negation": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "no-answer": null,
+        "normalization": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "paraphrase": {
+          "queries": 5,
+          "recallAt1": 0.8,
+          "recallAt3": 1
+        },
+        "repeated": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "short": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "vague": {
+          "queries": 2,
+          "recallAt1": 0.5,
+          "recallAt3": 1
+        }
+      }
+    },
+    {
+      "system": "hybrid-full",
+      "categories": {
+        "acronym": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "ar-over-en": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "arabic": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "asr-error": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "boundary": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "cross-language": {
+          "queries": 7,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "en-over-ar": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "en-over-fr": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "exact": {
+          "queries": 5,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "fr-over-en": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "homophone": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "long-question": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "missing-punctuation": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "misspelling": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "mixed-language": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "named-entity": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "negation": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "no-answer": null,
+        "normalization": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "paraphrase": {
+          "queries": 5,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "repeated": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "short": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "vague": {
+          "queries": 2,
+          "recallAt1": 0.5,
+          "recallAt3": 1
+        }
+      }
+    },
+    {
+      "system": "hybrid-full-no-refinement",
+      "categories": {
+        "acronym": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "ar-over-en": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "arabic": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "asr-error": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "boundary": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "cross-language": {
+          "queries": 7,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "en-over-ar": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "en-over-fr": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "exact": {
+          "queries": 5,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "fr-over-en": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "homophone": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "long-question": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "missing-punctuation": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "misspelling": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "mixed-language": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "named-entity": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "negation": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "no-answer": null,
+        "normalization": {
+          "queries": 1,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "paraphrase": {
+          "queries": 5,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "repeated": {
+          "queries": 2,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "short": {
+          "queries": 3,
+          "recallAt1": 1,
+          "recallAt3": 1
+        },
+        "vague": {
+          "queries": 2,
+          "recallAt1": 0.5,
+          "recallAt3": 1
+        }
+      }
+    }
+  ]
+}

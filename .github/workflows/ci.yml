@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+# Least privilege: nothing here needs write access to the repository.
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Actions are pinned to immutable commit SHAs so a moved tag cannot change what runs.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit, property and fuzz tests
+        run: npm test
+
+      - name: Production build (also runs artifact hardening and the host allowlist)
+        run: npm run build
+
+      - name: Inspect the packaged artifact
+        run: npm run verify:artifact
+
+      - name: Dependency audit
+        # Reviewed per release with an explicit reachability judgement rather than suppressed;
+        # see SECURITY.md. Non-blocking because every current advisory is in a Node-only
+        # dependency that src/build/artifact.test.ts proves is absent from the browser bundle.
+        run: npm audit --audit-level=high || true
+        continue-on-error: true
+
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build
+        run: npm run build
+
+      # MV3 extensions do not load in headless Chromium, so the suite needs a virtual display.
+      - name: Browser integration tests
+        run: xvfb-run -a npm run test:e2e

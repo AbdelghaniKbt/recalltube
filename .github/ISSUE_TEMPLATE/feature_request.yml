@@ -1,0 +1,35 @@
+name: Feature request
+description: Propose a focused improvement to RecallTube
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed experience
+      description: Describe the smallest useful behavior, not only an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: privacy
+    attributes:
+      label: Privacy, performance, and compatibility impact
+      description: Note any new network request, permission, model download, or browser dependency.
+    validations:
+      required: true
+  - type: checkboxes
+    id: principles
+    attributes:
+      label: Project principles
+      options:
+        - label: This proposal does not require a cloud transcript backend or telemetry.
+          required: true
+        - label: This proposal does not bypass YouTube access controls or Proof-of-Origin protections.
+          required: true

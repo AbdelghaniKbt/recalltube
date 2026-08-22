@@ -1,0 +1,70 @@
+{
+  "name": "recalltube",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first transcript search for the YouTube video you are watching.",
+  "license": "Apache-2.0",
+  "author": "Abdelghani KABOT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AbdelghaniKbt/recalltube.git"
+  },
+  "homepage": "https://github.com/AbdelghaniKbt/recalltube#readme",
+  "bugs": {
+    "url": "https://github.com/AbdelghaniKbt/recalltube/issues"
+  },
+  "keywords": [
+    "browser-extension",
+    "chrome-extension",
+    "local-first",
+    "semantic-search",
+    "transcript",
+    "youtube"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/sync-ort-assets.mjs && wxt prepare",
+    "dev": "node scripts/sync-ort-assets.mjs && wxt",
+    "dev:firefox": "wxt -b firefox",
+    "build": "wxt build",
+    "build:firefox": "wxt build -b firefox",
+    "zip": "wxt zip",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "sync:ort": "node scripts/sync-ort-assets.mjs",
+    "prebuild": "node scripts/sync-ort-assets.mjs",
+    "verify:artifact": "node scripts/harden-artifact.mjs",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:live": "node scripts/live-youtube-smoke.mjs",
+    "test:live:reference": "tsx scripts/live-reference-smoke.ts",
+    "test:reference": "tsx scripts/reference-feature-smoke.ts",
+    "test:reference:ui": "tsx scripts/reference-ui-smoke.ts",
+    "test:ui:visual": "tsx scripts/ui-visual-smoke.ts",
+    "bench": "tsx benchmarks/run.ts",
+    "bench:perf": "tsx benchmarks/performance.ts",
+    "prezip": "node scripts/sync-ort-assets.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "@wxt-dev/module-react": "^1.2.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.31",
+    "@types/jsdom": "^28.0.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "fast-check": "^4.9.0",
+    "jsdom": "^29.1.1",
+    "playwright": "^1.62.1",
+    "tsx": "^4.23.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10",
+    "wxt": "^0.21.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
