@@ -5,6 +5,9 @@ export interface EvidencePassage {
   start: number;
   end: number;
   text: string;
+  /** Present when evidence comes from a playlist-wide search. */
+  videoId?: string;
+  videoTitle?: string;
 }
 
 export interface GroundedAnswerRequest {

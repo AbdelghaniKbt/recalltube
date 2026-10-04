@@ -115,6 +115,20 @@ suite("built artifact", () => {
     expect(csp).toContain("object-src 'self'");
   });
 
+  it("documents every host permission it declares", () => {
+    // PRIVACY.md calls its host list "the complete list". It drifted: the manifest declared two
+    // Hugging Face `cdn-lfs` hosts that the document never mentioned, which is exactly the kind of
+    // understatement a privacy document must not make.
+    const manifest = JSON.parse(readFileSync(path.join(ARTIFACT, "manifest.json"), "utf8")) as {
+      host_permissions: string[];
+    };
+    const privacy = readFileSync(path.resolve(__dirname, "../../PRIVACY.md"), "utf8");
+    const undocumented = manifest.host_permissions
+      .map((host) => host.replace(/^https:\/\//, "").replace(/\/\*$/, ""))
+      .filter((host) => !privacy.includes(host));
+    expect(undocumented).toEqual([]);
+  });
+
   it("stays within a sane package size", () => {
     const total = files.reduce((sum, file) => sum + statSync(file).size, 0);
     // Almost all of this is the ONNX runtime; a jump means something unexpected got bundled.

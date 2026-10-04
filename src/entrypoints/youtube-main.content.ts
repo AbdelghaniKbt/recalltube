@@ -1,4 +1,6 @@
 import type { CaptionTrackInfo, PageDataResponse } from "../types/messages";
+import { buildPlaylistInventory } from "../playlist/inventory";
+import { parseAssignedJson } from "../transcript/player-bootstrap";
 
 /**
  * Main-world bridge.
@@ -19,7 +21,9 @@ interface CaptionTrack {
 }
 
 interface YoutubePlayerResponse {
-  videoDetails?: { videoId?: string; title?: string };
+  videoDetails?: { videoId?: string; title?: string; isLive?: boolean };
+  /** Why the player can or cannot play: `OK`, `ERROR` (removed), `LOGIN_REQUIRED` (private, age-gated)… */
+  playabilityStatus?: { status?: string; reason?: string };
   captions?: {
     playerCaptionsTracklistRenderer?: {
       captionTracks?: CaptionTrack[];
@@ -31,6 +35,7 @@ interface YoutubePlayerResponse {
 declare global {
   interface Window {
     ytInitialPlayerResponse?: YoutubePlayerResponse;
+    ytInitialData?: unknown;
   }
 }
 
@@ -39,10 +44,27 @@ function readPlayerResponse(): YoutubePlayerResponse | undefined {
     | (HTMLElement & { getPlayerResponse?: () => YoutubePlayerResponse })
     | null;
   try {
-    return player?.getPlayerResponse?.() ?? window.ytInitialPlayerResponse;
+    const direct = player?.getPlayerResponse?.();
+    const initial = window.ytInitialPlayerResponse;
+    const serialized = readSerializedPlayerResponse();
+    return [direct, initial, serialized].find(hasCaptionTracks) ?? direct ?? initial ?? serialized;
   } catch {
-    return window.ytInitialPlayerResponse;
+    return window.ytInitialPlayerResponse ?? readSerializedPlayerResponse();
   }
+}
+
+function hasCaptionTracks(response: YoutubePlayerResponse | undefined): boolean {
+  return Boolean(response?.captions?.playerCaptionsTracklistRenderer?.captionTracks?.length);
+}
+
+function readSerializedPlayerResponse(): YoutubePlayerResponse | undefined {
+  const scripts = [...document.scripts].map((script) => script.textContent ?? "");
+  return parseAssignedJson(scripts, ["ytInitialPlayerResponse"]) as YoutubePlayerResponse | undefined;
+}
+
+function readSerializedInitialData(): unknown | undefined {
+  const scripts = [...document.scripts].map((script) => script.textContent ?? "");
+  return parseAssignedJson(scripts, ["ytInitialData"]);
 }
 
 function trackName(name: CaptionTrack["name"]): string {
@@ -96,6 +118,16 @@ export default defineContentScript({
             response?.videoDetails?.videoId ?? new URL(location.href).searchParams.get("v") ?? undefined,
           title: response?.videoDetails?.title ?? document.title.replace(/\s+-\s+YouTube$/u, ""),
           captionTracks,
+          playability: {
+            status: response?.playabilityStatus?.status,
+            reason: response?.playabilityStatus?.reason,
+            isLive: response?.videoDetails?.isLive === true,
+          },
+          playlist: buildPlaylistInventory({
+            href: location.href,
+            bootstrap: window.ytInitialData ?? readSerializedInitialData(),
+            document,
+          }),
         },
       };
       window.postMessage(payload, location.origin);

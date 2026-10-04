@@ -1,5 +1,6 @@
-import type { CaptionTrackInfo, PageDataPayload } from "../types/messages";
-import type { CaptionTrackIdentity } from "../types/transcript";
+import type { CaptionTrackInfo, PageDataPayload, PlayabilityInfo } from "../types/messages";
+import type { AcquisitionFailureReason, CaptionTrackIdentity } from "../types/transcript";
+import { parsePlaylistInventory } from "../playlist/inventory";
 
 /**
  * Validation for the main-world bridge payload.
@@ -69,7 +70,47 @@ export function parsePageDataPayload(value: unknown): PageDataPayload | undefine
     videoId: cleanString(record.videoId, 32),
     title: cleanString(record.title, 500),
     captionTracks,
+    playability: parsePlayability(record.playability),
+    playlist: parsePlaylistInventory(record.playlist),
   };
+}
+
+function parsePlayability(value: unknown): PlayabilityInfo | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  const status = cleanString(record.status, 32);
+  const reason = cleanString(record.reason, 120);
+  const isLive = record.isLive === true;
+  if (!status && !reason && !isLive) return undefined;
+  return { status, reason, isLive };
+}
+
+/**
+ * Why a video with no advertised caption track cannot have captions read, from the player's own
+ * playability verdict — or `undefined` when the player reports the video as playable, in which case
+ * "no caption tracks" is exactly what it says and the native transcript stage still gets its turn.
+ *
+ * Statuses are YouTube's: `ERROR` for a removed video, `UNPLAYABLE` for one that cannot play here,
+ * `LOGIN_REQUIRED`/`AGE_CHECK_REQUIRED`/`CONTENT_CHECK_REQUIRED` for private or restricted content,
+ * `LIVE_STREAM_OFFLINE` for a premiere or stream that has not started. `reason` is the player's own
+ * short UI message, capped, so a diagnostic can say which it was.
+ */
+export function playabilityFailure(
+  playability: PlayabilityInfo | undefined
+): { reason: AcquisitionFailureReason; detail: string } | undefined {
+  if (!playability) return undefined;
+  const status = (playability.status ?? "").toUpperCase();
+  const because = playability.reason ? ` (${playability.reason.slice(0, 80)})` : "";
+  if (status === "ERROR" || status === "UNPLAYABLE") {
+    return { reason: "video-unavailable", detail: `The player reports the video as unavailable: ${status}${because}.` };
+  }
+  if (status === "LOGIN_REQUIRED" || status === "AGE_CHECK_REQUIRED" || status === "CONTENT_CHECK_REQUIRED") {
+    return { reason: "permission-denied", detail: `The player requires sign-in or a check: ${status}${because}.` };
+  }
+  if (status === "LIVE_STREAM_OFFLINE" || playability.isLive) {
+    return { reason: "unsupported", detail: `The player reports a live stream or premiere: ${status || "LIVE"}${because}.` };
+  }
+  return undefined;
 }
 
 /** A stable handle for a track, so a track change invalidates the transcript identity. */

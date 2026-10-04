@@ -3,6 +3,7 @@ import { ExtractiveAnswerProvider } from "./extractive";
 import { PromptApiAnswerProvider } from "./prompt-api";
 import { promptApiLanguage } from "./language";
 import type { EvidencePassage, GroundedAnswer, GroundedAnswerProvider } from "./types";
+import type { PlaylistSearchResult } from "../types/playlist";
 
 export * from "./types";
 export { ExtractiveAnswerProvider } from "./extractive";
@@ -69,6 +70,59 @@ export async function ask(
   options: { allowPromptApi: boolean; signal?: AbortSignal }
 ): Promise<AskOutcome> {
   const evidence = toEvidence(results, cues);
+  const { provider, generative } = await selectAnswerProvider(options.allowPromptApi, question);
+  const answer = await provider.answer({ question, evidence }, options.signal);
+  return { ...answer, evidence, generative };
+}
+
+/**
+ * Evidence for a playlist question, interleaved across videos in order of first appearance.
+ *
+ * Taking the top six results verbatim let one video that ranked first fill every slot, so a
+ * question whose answer spans the playlist was answered from a single video and the others never
+ * reached the model. Round-robin keeps the strongest result of each video in play; within a video
+ * the order is still by rank.
+ */
+export function toPlaylistEvidence(results: PlaylistSearchResult[]): EvidencePassage[] {
+  const byVideo = new Map<string, PlaylistSearchResult[]>();
+  for (const entry of results) {
+    const queue = byVideo.get(entry.item.videoId) ?? [];
+    queue.push(entry);
+    byVideo.set(entry.item.videoId, queue);
+  }
+  const queues = [...byVideo.values()];
+  const limit = Math.min(results.length, MAX_EVIDENCE);
+  const longest = Math.max(0, ...queues.map((queue) => queue.length));
+  const ordered: PlaylistSearchResult[] = [];
+  for (let round = 0; round < longest && ordered.length < limit; round += 1) {
+    for (const queue of queues) {
+      const next = queue[round];
+      if (next && ordered.length < limit) ordered.push(next);
+    }
+  }
+  return ordered.map((entry, position) => {
+    const result = entry.result;
+    const cues = entry.transcript.cues;
+    const first = Math.max(0, result.cueStartIndex - CONTEXT_CUES);
+    const last = Math.min(cues.length - 1, result.cueEndIndex + CONTEXT_CUES);
+    const slice = cues.slice(first, last + 1);
+    return {
+      id: `e${position + 1}`,
+      videoId: entry.item.videoId,
+      videoTitle: entry.item.title,
+      start: slice[0]?.start ?? result.start,
+      end: slice.at(-1)?.end ?? result.end,
+      text: slice.map((cue) => cue.text).join(" "),
+    };
+  });
+}
+
+export async function askPlaylist(
+  question: string,
+  results: PlaylistSearchResult[],
+  options: { allowPromptApi: boolean; signal?: AbortSignal }
+): Promise<AskOutcome> {
+  const evidence = toPlaylistEvidence(results);
   const { provider, generative } = await selectAnswerProvider(options.allowPromptApi, question);
   const answer = await provider.answer({ question, evidence }, options.signal);
   return { ...answer, evidence, generative };

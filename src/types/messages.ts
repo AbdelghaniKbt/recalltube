@@ -1,20 +1,43 @@
 import type { AdapterDiagnostic, PageSnapshot } from "./transcript";
+import type { PlaylistInventory } from "./playlist";
 
 /** Requests the side panel sends to a YouTube tab. */
 export type ContentRequest =
   | { type: "recalltube:get-state" }
-  | { type: "recalltube:refresh"; languageCode?: string }
+  | {
+      type: "recalltube:refresh";
+      languageCode?: string;
+      acquisitionMode?: "automatic" | "direct-only" | "native-panel";
+    }
+  | { type: "recalltube:get-playlist"; complete: boolean }
+  | { type: "recalltube:prepare-native" }
   | { type: "recalltube:seek"; seconds: number }
   | { type: "recalltube:diagnostics" };
 
 export type ContentResponse =
-  | { ok: true; snapshot?: PageSnapshot; diagnostics?: AdapterDiagnostic[] }
+  | {
+      ok: true;
+      snapshot?: PageSnapshot;
+      diagnostics?: AdapterDiagnostic[];
+      playlist?: PlaylistInventory;
+      nativeReady?: boolean;
+      videoId?: string;
+      /** For `recalltube:refresh`: the attempt generation the request started or joined. */
+      generation?: number;
+      /**
+       * Identifies the page instance that answered. Generations restart at 1 in a new document, so a
+       * generation is only meaningful together with the document that issued it.
+       */
+      documentId?: string;
+    }
   | { ok: false; error: string };
 
 /** Broadcast from a tab when its transcript state changes. */
 export interface StateChangedMessage {
   type: "recalltube:state-changed";
   snapshot: PageSnapshot;
+  /** The page instance that produced the snapshot; generations are comparable only within one. */
+  documentId?: string;
 }
 
 /** Raw caption-track description as it crosses the main-world bridge. Untrusted until validated. */
@@ -27,10 +50,23 @@ export interface CaptionTrackInfo {
   translatedFrom?: string;
 }
 
+/**
+ * The player's own verdict on the video, as it crosses the bridge. Untrusted until validated. Lets a
+ * removed, private or not-yet-started video fail honestly at once instead of waiting out the native
+ * transcript stage for a control that will never render.
+ */
+export interface PlayabilityInfo {
+  status?: string;
+  reason?: string;
+  isLive?: boolean;
+}
+
 export interface PageDataPayload {
   videoId?: string;
   title?: string;
   captionTracks: CaptionTrackInfo[];
+  playability?: PlayabilityInfo;
+  playlist?: PlaylistInventory;
 }
 
 export interface PageDataResponse {
@@ -59,10 +95,18 @@ export function parseContentRequest(value: unknown): ContentRequest | undefined 
       return { type: "recalltube:get-state" };
     case "recalltube:diagnostics":
       return { type: "recalltube:diagnostics" };
+    case "recalltube:get-playlist":
+      return { type: "recalltube:get-playlist", complete: value.complete === true };
+    case "recalltube:prepare-native":
+      return { type: "recalltube:prepare-native" };
     case "recalltube:refresh":
       return {
         type: "recalltube:refresh",
         languageCode: typeof value.languageCode === "string" ? value.languageCode.slice(0, 16) : undefined,
+        acquisitionMode:
+          value.acquisitionMode === "direct-only" || value.acquisitionMode === "native-panel"
+            ? value.acquisitionMode
+            : "automatic",
       };
     case "recalltube:seek": {
       // Must already be a number: coercing would accept "12", and an untrusted sender should not
@@ -84,5 +128,9 @@ export function parseStateChanged(value: unknown): StateChangedMessage | undefin
   if (!isRecord(snapshot) || typeof snapshot.status !== "string") return undefined;
   if (!PAGE_STATUSES.has(snapshot.status)) return undefined;
   if (typeof snapshot.generation !== "number" || !Number.isFinite(snapshot.generation)) return undefined;
-  return { type: "recalltube:state-changed", snapshot: snapshot as unknown as PageSnapshot };
+  const documentId =
+    typeof value.documentId === "string" && value.documentId.length > 0 && value.documentId.length <= 64
+      ? value.documentId
+      : undefined;
+  return { type: "recalltube:state-changed", snapshot: snapshot as unknown as PageSnapshot, documentId };
 }

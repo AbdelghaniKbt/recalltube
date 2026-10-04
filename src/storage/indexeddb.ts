@@ -1,4 +1,5 @@
 import type { TranscriptChunk, TranscriptDocument } from "../types/transcript";
+import type { PlaylistIndexJob, PlaylistInventory } from "../types/playlist";
 
 /**
  * Local caches for transcripts and embeddings.
@@ -15,14 +16,22 @@ import type { TranscriptChunk, TranscriptDocument } from "../types/transcript";
 
 const DATABASE_NAME = "recalltube";
 /** Bump to migrate; `onupgradeneeded` drops incompatible stores rather than guessing. */
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 
 const TRANSCRIPTS = "transcripts";
 const EMBEDDINGS = "embeddings";
+const PLAYLISTS = "playlists";
+const PLAYLIST_JOBS = "playlistJobs";
 
 /** Keeps the cache bounded without asking the user to manage it. */
-const MAX_TRANSCRIPTS = 200;
-const MAX_EMBEDDING_RECORDS = 40;
+const MAX_TRANSCRIPTS = 1_000;
+const MAX_EMBEDDING_RECORDS = 250;
+const MAX_PLAYLISTS = 100;
+const MAX_PLAYLIST_JOBS = 25;
+
+interface StoredPlaylist extends PlaylistInventory {
+  updatedAt: number;
+}
 
 export interface StoredTranscript {
   transcriptId: string;
@@ -71,18 +80,33 @@ function openDatabase(): Promise<IDBDatabase> {
   if (connection) return connection;
   connection = new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const database = request.result;
       // Records from version 1 used a colliding key scheme and `number[][]` vectors; there is
       // nothing worth migrating, and keeping them would serve wrong results.
-      for (const name of [TRANSCRIPTS, EMBEDDINGS]) {
-        if (database.objectStoreNames.contains(name)) database.deleteObjectStore(name);
+      if (event.oldVersion < 2) {
+        for (const name of [TRANSCRIPTS, EMBEDDINGS]) {
+          if (database.objectStoreNames.contains(name)) database.deleteObjectStore(name);
+        }
       }
-      const transcripts = database.createObjectStore(TRANSCRIPTS, { keyPath: "transcriptId" });
-      transcripts.createIndex("videoId", "videoId", { unique: false });
-      transcripts.createIndex("updatedAt", "updatedAt", { unique: false });
-      const embeddings = database.createObjectStore(EMBEDDINGS, { keyPath: "key" });
-      embeddings.createIndex("createdAt", "createdAt", { unique: false });
+      if (!database.objectStoreNames.contains(TRANSCRIPTS)) {
+        const transcripts = database.createObjectStore(TRANSCRIPTS, { keyPath: "transcriptId" });
+        transcripts.createIndex("videoId", "videoId", { unique: false });
+        transcripts.createIndex("updatedAt", "updatedAt", { unique: false });
+      }
+      if (!database.objectStoreNames.contains(EMBEDDINGS)) {
+        const embeddings = database.createObjectStore(EMBEDDINGS, { keyPath: "key" });
+        embeddings.createIndex("createdAt", "createdAt", { unique: false });
+      }
+      if (!database.objectStoreNames.contains(PLAYLISTS)) {
+        const playlists = database.createObjectStore(PLAYLISTS, { keyPath: "playlistId" });
+        playlists.createIndex("updatedAt", "updatedAt", { unique: false });
+      }
+      if (!database.objectStoreNames.contains(PLAYLIST_JOBS)) {
+        const jobs = database.createObjectStore(PLAYLIST_JOBS, { keyPath: "jobId" });
+        jobs.createIndex("playlistId", "playlistId", { unique: false });
+        jobs.createIndex("updatedAt", "updatedAt", { unique: false });
+      }
     };
     request.onsuccess = () => {
       const database = request.result;
@@ -150,6 +174,91 @@ export async function loadTranscriptForVideo(videoId: string): Promise<StoredTra
   return matches.sort((left, right) => right.updatedAt - left.updatedAt)[0];
 }
 
+/**
+ * Loads one latest transcript per requested video in one transaction.
+ *
+ * One `videoId` index lookup per requested video. The previous `getAll()` over the whole store
+ * materialized every cached transcript — up to 1,000 full cue lists — to find a playlist's ten, on
+ * every playlist-view render; the cost grew with the cache rather than with the playlist.
+ */
+export async function loadTranscriptsForVideos(videoIds: string[]): Promise<Map<string, StoredTranscript>> {
+  const wanted = [...new Set(videoIds)];
+  if (!wanted.length) return new Map();
+  const records = await withStore<StoredTranscript[]>(TRANSCRIPTS, "readonly", ([store]) => {
+    const index = store!.index("videoId");
+    const collected: StoredTranscript[] = [];
+    for (const videoId of wanted) {
+      const request = index.getAll(videoId);
+      request.onsuccess = () => {
+        collected.push(...request.result);
+      };
+    }
+    // Every request completes before the transaction does, so the array is full when it resolves.
+    return { result: collected };
+  });
+  const latest = new Map<string, StoredTranscript>();
+  for (const record of records) {
+    const previous = latest.get(record.videoId);
+    if (!previous || record.updatedAt > previous.updatedAt) latest.set(record.videoId, record);
+  }
+  return latest;
+}
+
+export async function savePlaylistInventory(inventory: PlaylistInventory): Promise<void> {
+  await withStore(PLAYLISTS, "readwrite", ([store]) =>
+    store!.put({ ...inventory, updatedAt: Date.now() } satisfies StoredPlaylist)
+  );
+  await evict(PLAYLISTS, "updatedAt", MAX_PLAYLISTS);
+}
+
+export function loadPlaylistInventory(playlistId: string): Promise<StoredPlaylist | undefined> {
+  return withStore(PLAYLISTS, "readonly", ([store]) => store!.get(playlistId));
+}
+
+export async function savePlaylistJob(job: PlaylistIndexJob): Promise<void> {
+  await withStore(PLAYLIST_JOBS, "readwrite", ([store]) => store!.put(job));
+  await evict(PLAYLIST_JOBS, "updatedAt", MAX_PLAYLIST_JOBS);
+}
+
+export function loadPlaylistJob(jobId: string): Promise<PlaylistIndexJob | undefined> {
+  return withStore(PLAYLIST_JOBS, "readonly", ([store]) => store!.get(jobId));
+}
+
+export async function loadLatestPlaylistJob(playlistId: string): Promise<PlaylistIndexJob | undefined> {
+  const jobs = await withStore<PlaylistIndexJob[]>(PLAYLIST_JOBS, "readonly", ([store]) =>
+    store!.index("playlistId").getAll(playlistId)
+  );
+  return jobs.sort((left, right) => right.updatedAt - left.updatedAt)[0];
+}
+
+export async function loadResumablePlaylistJobs(): Promise<PlaylistIndexJob[]> {
+  const jobs = await withStore<PlaylistIndexJob[]>(PLAYLIST_JOBS, "readonly", ([store]) => store!.getAll());
+  return jobs.filter((job) => job.state === "running" || job.state === "queued");
+}
+
+/**
+ * Jobs that still record an extension-owned worker, whatever their state.
+ *
+ * A job suspended while paused, cancelled or completed is not resumable, so nothing else revisits
+ * it — but the tab or window it created can outlive the service worker, and only these persisted
+ * ids identify it. Cleanup by id can never touch a tab the user opened.
+ */
+export async function loadPlaylistJobsOwningWorkers(): Promise<PlaylistIndexJob[]> {
+  const jobs = await withStore<PlaylistIndexJob[]>(PLAYLIST_JOBS, "readonly", ([store]) => store!.getAll());
+  return jobs.filter((job) => job.workerTabId !== undefined || job.workerWindowId !== undefined);
+}
+
+export async function clearPlaylistData(playlistId: string): Promise<void> {
+  await withStore(PLAYLISTS, "readwrite", ([store]) => store!.delete(playlistId));
+  const jobs = await withStore<PlaylistIndexJob[]>(PLAYLIST_JOBS, "readonly", ([store]) =>
+    store!.index("playlistId").getAll(playlistId)
+  );
+  await withStore(PLAYLIST_JOBS, "readwrite", ([store]) => {
+    for (const job of jobs) store!.delete(job.jobId);
+    return { result: undefined };
+  });
+}
+
 export async function saveEmbeddingRecord(record: EmbeddingRecord): Promise<void> {
   await withStore(EMBEDDINGS, "readwrite", ([store]) => store!.put(record));
   await evict(EMBEDDINGS, "createdAt", MAX_EMBEDDING_RECORDS);
@@ -185,19 +294,25 @@ async function evict(storeName: string, indexName: string, keep: number): Promis
 export interface StorageUsage {
   transcripts: number;
   embeddingRecords: number;
+  playlists: number;
+  playlistJobs: number;
   usageBytes?: number;
   quotaBytes?: number;
 }
 
 export async function storageUsage(): Promise<StorageUsage> {
-  const [transcripts, embeddingRecords] = await Promise.all([
+  const [transcripts, embeddingRecords, playlists, playlistJobs] = await Promise.all([
     withStore<number>(TRANSCRIPTS, "readonly", ([store]) => store!.count()).catch(() => 0),
     withStore<number>(EMBEDDINGS, "readonly", ([store]) => store!.count()).catch(() => 0),
+    withStore<number>(PLAYLISTS, "readonly", ([store]) => store!.count()).catch(() => 0),
+    withStore<number>(PLAYLIST_JOBS, "readonly", ([store]) => store!.count()).catch(() => 0),
   ]);
   const estimate = await navigator.storage?.estimate?.().catch(() => undefined);
   return {
     transcripts,
     embeddingRecords,
+    playlists,
+    playlistJobs,
     usageBytes: estimate?.usage,
     quotaBytes: estimate?.quota,
   };
@@ -226,7 +341,9 @@ export async function clearTranscriptsForVideo(videoId: string): Promise<void> {
 
 export async function clearStore(target: "transcripts" | "embeddings" | "all"): Promise<void> {
   const names =
-    target === "all" ? [TRANSCRIPTS, EMBEDDINGS] : [target === "transcripts" ? TRANSCRIPTS : EMBEDDINGS];
+    target === "all"
+      ? [TRANSCRIPTS, EMBEDDINGS, PLAYLISTS, PLAYLIST_JOBS]
+      : [target === "transcripts" ? TRANSCRIPTS : EMBEDDINGS];
   await withStore(names, "readwrite", (stores) => {
     for (const store of stores) store.clear();
     return { result: undefined };

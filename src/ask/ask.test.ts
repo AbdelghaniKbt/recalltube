@@ -2,7 +2,17 @@ import { describe, expect, it } from "vitest";
 import type { SearchResult, TranscriptCue } from "../types/transcript";
 import { ExtractiveAnswerProvider } from "./extractive";
 import { buildUserPrompt, sanitizeEvidenceText, SYSTEM_INSTRUCTION } from "./prompt";
-import { detectLanguage, promptApiLanguage, PROMPT_API_LANGUAGES, selectAnswerProvider, toEvidence } from "./index";
+import {
+  askPlaylist,
+  detectLanguage,
+  promptApiLanguage,
+  PROMPT_API_LANGUAGES,
+  selectAnswerProvider,
+  toEvidence,
+  toPlaylistEvidence,
+} from "./index";
+import type { PlaylistSearchResult } from "../types/playlist";
+import type { TranscriptDocument } from "../types/transcript";
 import { extractJsonObject, validateAnswer } from "./validate";
 import type { EvidencePassage } from "./types";
 import { INSUFFICIENT_EVIDENCE_MESSAGE } from "./types";
@@ -205,6 +215,105 @@ describe("toEvidence", () => {
   it("gives every passage a distinct id", () => {
     const passages = toEvidence([result(1, 1), result(4, 4), result(7, 7)], cues);
     expect(new Set(passages.map((passage) => passage.id)).size).toBe(passages.length);
+  });
+});
+
+describe("toPlaylistEvidence", () => {
+  // Playlist Ask shipped without coverage. Its whole point is that an answer stays attributable to
+  // a specific video, so losing the video identity is the failure that matters here.
+  const document = (videoId: string): TranscriptDocument => ({
+    transcriptId: `t-${videoId}`,
+    video: { id: videoId, title: `Title ${videoId}`, url: `https://www.youtube.com/watch?v=${videoId}` },
+    cues: Array.from({ length: 6 }, (_, index) => ({
+      start: index * 5,
+      end: index * 5 + 5,
+      text: `${videoId} cue ${index}`,
+    })),
+    source: "player",
+    fetchedAt: 1,
+    parserVersion: 1,
+  });
+
+  const topical = (videoId: string, topic: string): TranscriptDocument => ({
+    ...document(videoId),
+    cues: Array.from({ length: 6 }, (_, index) => ({
+      start: index * 5,
+      end: index * 5 + 5,
+      text: `this segment explains ${topic} in detail, part ${index}`,
+    })),
+  });
+
+  const entry = (videoId: string, position: number, cueIndex: number): PlaylistSearchResult => ({
+    playlistId: "PL1234567890abcdef",
+    item: { videoId, title: `Title ${videoId}`, position },
+    transcript: document(videoId),
+    result: {
+      id: `r-${videoId}-${cueIndex}`,
+      start: cueIndex * 5,
+      end: cueIndex * 5 + 5,
+      text: `${videoId} cue ${cueIndex}`,
+      score: 1,
+      signals: ["semantic"],
+      cueStartIndex: cueIndex,
+      cueEndIndex: cueIndex,
+      highlights: [],
+    },
+  });
+
+  it("keeps the video id, title and timestamp on every passage", () => {
+    const passages = toPlaylistEvidence([entry("aaa12345678", 0, 2), entry("bbb12345678", 1, 4)]);
+    expect(passages.map((passage) => [passage.videoId, passage.videoTitle, passage.start])).toEqual([
+      ["aaa12345678", "Title aaa12345678", 5],
+      ["bbb12345678", "Title bbb12345678", 15],
+    ]);
+  });
+
+  it("takes context from the cues of the video the result came from", () => {
+    const [passage] = toPlaylistEvidence([entry("bbb12345678", 1, 3)]);
+    expect(passage!.text).toBe("bbb12345678 cue 2 bbb12345678 cue 3 bbb12345678 cue 4");
+  });
+
+  it("gives every passage a distinct id and caps how much reaches the model", () => {
+    const many = Array.from({ length: 20 }, (_, index) => entry(`vid${index % 3}0000000`, index % 3, index % 5));
+    const passages = toPlaylistEvidence(many);
+    expect(passages.length).toBeLessThanOrEqual(6);
+    expect(new Set(passages.map((passage) => passage.id)).size).toBe(passages.length);
+  });
+
+  it("keeps every video in play instead of letting the first-ranked one fill all six slots", () => {
+    // Ten results from video A ahead of two from video B: a plain top-six would never show B.
+    const many = [
+      ...Array.from({ length: 10 }, (_, index) => entry("aaa12345678", 0, index % 5)),
+      entry("bbb12345678", 1, 1),
+      entry("bbb12345678", 1, 3),
+    ];
+    const passages = toPlaylistEvidence(many);
+    expect(passages).toHaveLength(6);
+    expect(passages.filter((passage) => passage.videoId === "bbb12345678")).toHaveLength(2);
+    // Order of first appearance is kept: A leads, then B, then A again.
+    expect(passages.slice(0, 3).map((passage) => passage.videoId)).toEqual(["aaa12345678", "bbb12345678", "aaa12345678"]);
+  });
+
+  it("answers only from playlist evidence, and admits when there is none", async () => {
+    // Several videos, so a term that appears in one of them reads as distinctive rather than
+    // ubiquitous — the extractive provider gates on exactly that.
+    const topics = ["backpropagation", "tokenization", "attention", "embeddings"];
+    const grounded = await askPlaylist(
+      "backpropagation",
+      topics.map((topic, position) => ({
+        ...entry(`vid${position}0000000`, position, 2),
+        transcript: topical(`vid${position}0000000`, topic),
+      })),
+      { allowPromptApi: false }
+    );
+    expect(grounded.citations.length).toBeGreaterThan(0);
+    for (const citation of grounded.citations) {
+      expect(grounded.evidence.some((passage) => passage.id === citation.evidenceId)).toBe(true);
+    }
+
+    const empty = await askPlaylist("backpropagation", [], { allowPromptApi: false });
+    expect(empty.citations).toEqual([]);
+    expect(empty.answer).toBe(INSUFFICIENT_EVIDENCE_MESSAGE);
   });
 });
 

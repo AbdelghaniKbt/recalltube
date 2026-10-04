@@ -156,6 +156,11 @@ describe("property: normalization offsets", () => {
       { numRuns: 1500 }
     );
   });
+
+  it("removes apostrophes introduced by compatibility decomposition in one pass", () => {
+    expect(normalizeForSearch("¹ŉ")).toBe("1n");
+    expect(normalizeForSearch(normalizeForSearch("¹ŉ"))).toBe("1n");
+  });
 });
 
 describe("characterNgrams", () => {

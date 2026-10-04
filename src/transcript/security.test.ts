@@ -189,6 +189,15 @@ describe("message validation", () => {
     expect((parsed as { languageCode?: string }).languageCode!.length).toBeLessThanOrEqual(16);
   });
 
+  it("allowlists acquisition modes from extension messages", () => {
+    expect(parseContentRequest({ type: "recalltube:refresh", acquisitionMode: "native-panel" })).toMatchObject({
+      acquisitionMode: "native-panel",
+    });
+    expect(parseContentRequest({ type: "recalltube:refresh", acquisitionMode: "run-page-code" })).toMatchObject({
+      acquisitionMode: "automatic",
+    });
+  });
+
   it("rejects snapshots with an invalid status or generation", () => {
     expect(parseStateChanged({ type: "recalltube:state-changed", snapshot: { status: "ready", generation: 1 } })).toBeDefined();
     expect(parseStateChanged({ type: "recalltube:state-changed", snapshot: { status: "hacked", generation: 1 } })).toBeUndefined();

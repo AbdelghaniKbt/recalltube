@@ -1,137 +1,130 @@
-import { chromium } from "playwright";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+// Live single-video check of the packaged extension against real YouTube.
+//
+//   npm run build
+//   npm run test:live -- "https://www.youtube.com/watch?v=96jN2OCOfLs" "vibe coding"
+//
+// Uses a plain Chromium launch (see scripts/plain-chromium.mjs for why automation-flagged browsers
+// produce false failures). Prints only structure: adapter outcomes, caption request status/size,
+// cue counts and timings. No caption text, URLs or tokens are printed.
+import { launchPlainChromium, recordCaptionTraffic } from "./plain-chromium.mjs";
 
 const rawTarget = process.argv[2];
+const phrase = process.argv[3] ?? "";
 if (!rawTarget) {
-  throw new Error("Usage: npm run test:live -- https://www.youtube.com/watch?v=VIDEO_ID");
+  throw new Error('Usage: npm run test:live -- https://www.youtube.com/watch?v=VIDEO_ID ["known phrase"]');
 }
-
 const target = new URL(rawTarget);
-if (target.protocol !== "https:" || !/(^|\.)youtube\.com$/u.test(target.hostname) || target.pathname !== "/watch") {
+const videoId = target.searchParams.get("v");
+if (
+  target.protocol !== "https:" ||
+  !/(^|\.)youtube\.com$/u.test(target.hostname) ||
+  target.pathname !== "/watch" ||
+  !videoId ||
+  !/^[A-Za-z0-9_-]{6,24}$/u.test(videoId)
+) {
   throw new Error("The live smoke test only accepts an HTTPS YouTube watch URL.");
 }
 
-const extensionPath = path.resolve(".output/chrome-mv3");
-if (!fs.existsSync(path.join(extensionPath, "manifest.json"))) {
-  throw new Error("Build the extension first with npm run build.");
-}
-
-function bundledChromium() {
-  const base = path.join(os.homedir(), "AppData/Local/ms-playwright");
-  if (!fs.existsSync(base)) return undefined;
-  const build = fs
-    .readdirSync(base)
-    .filter((name) => name.startsWith("chromium-") && !name.includes("headless"))
-    .sort()
-    .at(-1);
-  if (!build) return undefined;
-  for (const candidate of [
-    "chrome-win64/chrome.exe",
-    "chrome-win/chrome.exe",
-    "chrome-linux/chrome",
-    "chrome-mac/Chromium.app/Contents/MacOS/Chromium",
-  ]) {
-    const executable = path.join(base, build, candidate);
-    if (fs.existsSync(executable)) return executable;
-  }
-  return undefined;
-}
-
-const profile = fs.mkdtempSync(path.join(os.tmpdir(), "recalltube-live-"));
-let context;
+const startedAt = Date.now();
+const seconds = () => Math.round((Date.now() - startedAt) / 100) / 10;
+const session = await launchPlainChromium();
 
 try {
-  context = await chromium.launchPersistentContext(profile, {
-    executablePath: bundledChromium(),
-    headless: false,
-    args: [
-      `--disable-extensions-except=${extensionPath}`,
-      `--load-extension=${extensionPath}`,
-      "--no-first-run",
-      "--no-default-browser-check",
-      "--mute-audio",
-    ],
-  });
-
-  let extensionId = "";
-  for (let attempt = 0; attempt < 60 && !extensionId; attempt += 1) {
-    const worker = context.serviceWorkers()[0];
-    if (worker) extensionId = new URL(worker.url()).host;
-    else await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  if (!extensionId) throw new Error("The unpacked extension service worker did not start.");
-
-  const watch = await context.newPage();
-  const transcriptResponses = [];
+  const traffic = recordCaptionTraffic(session.context, startedAt);
+  const watch = await session.context.newPage();
   const pageErrors = [];
-  watch.on("pageerror", (error) => pageErrors.push(error.message));
-  watch.on("response", (response) => {
-    if (/timedtext|get_transcript/iu.test(response.url())) {
-      transcriptResponses.push({ status: response.status(), url: response.url().replace(/([?&](?:sig|signature|pot|ei))=[^&]+/giu, "$1=<redacted>") });
-    }
-  });
+  watch.on("pageerror", (error) => pageErrors.push(error.message.slice(0, 200)));
   await watch.goto(target.href, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  await watch.waitForTimeout(7_000);
+  const signedIn = await watch
+    .evaluate(() => Boolean(document.querySelector("#avatar-btn")))
+    .catch(() => false);
 
-  const control = await context.newPage();
-  await control.goto(`chrome-extension://${extensionId}/sidepanel.html`, { waitUntil: "domcontentloaded" });
-
-  const send = (message) =>
-    control.evaluate(
-      async ({ watchUrl, payload }) => {
-        const tabs = await chrome.tabs.query({});
-        const tab = tabs.find((candidate) => candidate.id && candidate.url?.startsWith(watchUrl));
-        if (!tab?.id) throw new Error("The YouTube test tab was not found.");
-        return new Promise((resolve, reject) => {
-          chrome.tabs.sendMessage(tab.id, payload, (response) => {
-            const error = chrome.runtime.lastError;
-            if (error) reject(new Error(error.message));
-            else resolve(response);
-          });
-        });
-      },
-      { watchUrl: `${target.origin}${target.pathname}?v=${target.searchParams.get("v")}`, payload: message }
-    );
-
+  const panel = await session.context.newPage();
+  await panel.goto(`chrome-extension://${session.extensionId}/sidepanel.html`);
   await watch.bringToFront();
-  await watch.waitForTimeout(1_500);
-  const sidePanelText = await control.locator("body").innerText();
-  const initial = await send({ type: "recalltube:get-state" });
-  let final = initial;
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    final = await send({ type: "recalltube:get-state" });
-    if (final?.snapshot?.status === "ready") break;
-    await watch.waitForTimeout(500);
+
+  const ask = (message, timeoutMs = 4_000) =>
+    Promise.race([
+      panel.evaluate(
+        async ({ id, payload }) => {
+          const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url?.includes(`v=${id}`));
+          if (!tab?.id) return { error: "tab not found" };
+          return new Promise((resolve) =>
+            chrome.tabs.sendMessage(tab.id, payload, (response) =>
+              resolve(chrome.runtime.lastError ? { lastError: chrome.runtime.lastError.message } : response)
+            )
+          );
+        },
+        { id: videoId, payload: message }
+      ),
+      new Promise((resolve) => setTimeout(() => resolve({ timedOut: true }), timeoutMs)),
+    ]);
+
+  // The content script must stay responsive while it acquires; a stalled main thread is the
+  // failure this check exists to catch.
+  let snapshot;
+  let slowestReplyMs = 0;
+  let unanswered = 0;
+  const deadline = Date.now() + 150_000;
+  while (Date.now() < deadline) {
+    const asked = Date.now();
+    const reply = await ask({ type: "recalltube:get-state" });
+    slowestReplyMs = Math.max(slowestReplyMs, Date.now() - asked);
+    if (reply?.timedOut || reply?.lastError) unanswered += 1;
+    snapshot = reply?.snapshot ?? snapshot;
+    if (snapshot?.status === "ready" || snapshot?.status === "failed") break;
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  const readyAtSeconds = seconds();
+
+  const panelsAfter = await watch.evaluate(() =>
+    [...document.querySelectorAll("ytd-engagement-panel-section-list-renderer")]
+      .map((element) => element.getAttribute("visibility"))
+      .filter((visibility) => /EXPANDED/u.test(visibility ?? "")).length
+  );
+  const nativeDiagnostic = snapshot?.diagnostics?.find((entry) => entry.adapter === "native-panel");
+
+  let search;
+  if (snapshot?.status === "ready" && phrase) {
+    await panel.getByText(`${snapshot.document.cues.length.toLocaleString()} captions`).waitFor({ timeout: 15_000 }).catch(() => undefined);
+    await panel.getByRole("textbox").first().fill(phrase);
+    await panel.waitForTimeout(1_500);
+    const count = (await panel.locator("body").innerText()).match(/(\d+) moments? found/u)?.[1];
+    search = {
+      phrase,
+      moments: count ? Number(count) : 0,
+      firstTimestamp: await panel.locator(".result-card .timestamp").first().innerText().catch(() => null),
+    };
   }
 
-  const snapshot = final?.snapshot;
   const report = {
-    url: target.href,
-    title: await watch.title(),
-    extensionId,
-    rawInitial: initial,
-    initialStatus: initial?.snapshot?.status,
+    browser: session.browserVersion,
+    launch: "plain Chromium process (navigator.webdriver false), fresh profile",
+    signedIn,
+    videoId,
     finalStatus: snapshot?.status,
     reason: snapshot?.reason,
-    transcriptPanel: snapshot?.transcriptPanel,
+    secondsToFinalState: readyAtSeconds,
+    contentScript: { slowestReplyMs, unanswered },
+    adaptersAttempted: (snapshot?.diagnostics ?? []).map((entry) => ({
+      adapter: entry.adapter,
+      outcome: entry.outcome,
+      elapsedMs: Math.round(entry.elapsedMs),
+      detail: entry.detail,
+    })),
+    nativeControlAppeared: nativeDiagnostic ? !/control not found/u.test(nativeDiagnostic.detail) : null,
+    nativeRowsRendered: Number(nativeDiagnostic?.detail.match(/from (\d+) rendered rows/u)?.[1] ?? 0),
+    cuesCaptured: snapshot?.document?.cues?.length ?? 0,
     source: snapshot?.document?.source,
-    cueCount: snapshot?.document?.cues?.length ?? 0,
-    firstCues: snapshot?.document?.cues?.slice(0, 2) ?? [],
-    diagnostics: snapshot?.diagnostics ?? [],
-    sidePanelText: sidePanelText.slice(0, 1_500),
+    transcriptPanelsLeftExpanded: panelsAfter,
+    search,
+    captionTraffic: traffic,
     pageErrors,
-    transcriptResponses,
   };
   console.log(JSON.stringify(report, null, 2));
 
-  if (snapshot?.status !== "ready" || !snapshot.document?.cues?.length) process.exitCode = 2;
+  if (snapshot?.status !== "ready" || !report.cuesCaptured || panelsAfter > 0 || unanswered > 0) process.exitCode = 2;
+  if (phrase && !search?.moments) process.exitCode = 2;
 } finally {
-  await context?.close();
-  const resolvedProfile = path.resolve(profile);
-  const resolvedTemp = path.resolve(os.tmpdir());
-  if (resolvedProfile.startsWith(`${resolvedTemp}${path.sep}`)) {
-    fs.rmSync(resolvedProfile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-  }
+  await session.close();
 }

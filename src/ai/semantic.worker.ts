@@ -36,8 +36,16 @@ interface LoadedIndex {
 let provider: EmbeddingProvider | undefined;
 let providerKey: string | undefined;
 let initializing: Promise<{ backend: Backend }> | undefined;
-let loaded: LoadedIndex | undefined;
+/** Several playlist videos may be searched together; insertion order is our small in-memory LRU. */
+const loaded = new Map<string, LoadedIndex>();
+const MAX_LOADED_INDEXES = 128;
 const cancelled = new Set<string>();
+
+function remember(index: LoadedIndex): void {
+  loaded.delete(index.transcriptId);
+  loaded.set(index.transcriptId, index);
+  while (loaded.size > MAX_LOADED_INDEXES) loaded.delete(loaded.keys().next().value!);
+}
 
 function post(message: SemanticWorkerResponse) {
   worker.postMessage(message);
@@ -77,7 +85,7 @@ async function ensureProvider(
   if (provider) {
     await provider.dispose().catch(() => undefined);
     provider = undefined;
-    loaded = undefined;
+    loaded.clear();
   }
 
   const descriptor = modelDescriptor(modelKey);
@@ -146,12 +154,12 @@ async function indexTranscript(message: Extract<SemanticWorkerRequest, { type: "
 
   const cached = await loadEmbeddingRecord(key).catch(() => undefined);
   if (cached && cached.chunks.length === message.chunks.length) {
-    loaded = {
+    remember({
       transcriptId: message.transcriptId,
       chunks: cached.chunks,
       vectors: cached.vectors,
       dimension: cached.dimension,
-    };
+    });
     post({
       type: "indexed",
       requestId: message.requestId,
@@ -188,7 +196,7 @@ async function indexTranscript(message: Extract<SemanticWorkerRequest, { type: "
   }
 
   assertLive(message.requestId);
-  loaded = { transcriptId: message.transcriptId, chunks: message.chunks, vectors, dimension };
+  remember({ transcriptId: message.transcriptId, chunks: message.chunks, vectors, dimension });
 
   await saveEmbeddingRecord({
     ...identity,
@@ -212,10 +220,10 @@ async function indexTranscript(message: Extract<SemanticWorkerRequest, { type: "
 }
 
 async function search(message: Extract<SemanticWorkerRequest, { type: "search" }>) {
-  const index = loaded;
+  const index = await recallIndex(message.transcriptId);
   // Binding results to a transcript id is what stops a result from a previous video being shown
   // after navigation.
-  if (!index || index.transcriptId !== message.transcriptId) {
+  if (!index) {
     throw new Error("This transcript is not indexed yet.");
   }
   if (!provider) throw new Error("The embedding model is not initialized.");
@@ -225,15 +233,36 @@ async function search(message: Extract<SemanticWorkerRequest, { type: "search" }
   assertLive(message.requestId);
   if (!queryVector) throw new Error("The query could not be embedded.");
 
+  const results = scoreIndex(index, queryVector, message.limit);
+
+  post({ type: "results", requestId: message.requestId, transcriptId: message.transcriptId, results });
+  status(message.requestId, { phase: "ready", message: "Meaning search is ready." });
+}
+
+async function recallIndex(transcriptId: string): Promise<LoadedIndex | undefined> {
+  const memory = loaded.get(transcriptId);
+  if (memory) {
+    remember(memory);
+    return memory;
+  }
+  if (!provider) return undefined;
+  const cached = await loadEmbeddingRecord(embeddingKey(identityFor(provider, transcriptId))).catch(() => undefined);
+  if (!cached) return undefined;
+  const index = { transcriptId, chunks: cached.chunks, vectors: cached.vectors, dimension: cached.dimension };
+  remember(index);
+  return index;
+}
+
+function scoreIndex(index: LoadedIndex, queryVector: Float32Array, limit: number): SearchResult[] {
   const { chunks, vectors, dimension } = index;
   const scored: Array<{ chunk: TranscriptChunk; score: number }> = [];
   for (let position = 0; position < chunks.length; position += 1) {
     scored.push({ chunk: chunks[position]!, score: dot(queryVector, vectors, position * dimension, dimension) });
   }
 
-  const results: SearchResult[] = scored
+  return scored
     .sort((left, right) => right.score - left.score)
-    .slice(0, message.limit)
+    .slice(0, limit)
     .map(({ chunk, score }) => ({
       id: `semantic-${chunk.id}`,
       start: chunk.start,
@@ -247,8 +276,23 @@ async function search(message: Extract<SemanticWorkerRequest, { type: "search" }
       explanation: "Close in meaning to what you described.",
     }));
 
-  post({ type: "results", requestId: message.requestId, transcriptId: message.transcriptId, results });
-  status(message.requestId, { phase: "ready", message: "Meaning search is ready." });
+}
+
+async function searchMany(message: Extract<SemanticWorkerRequest, { type: "search-many" }>) {
+  if (!provider) throw new Error("The embedding model is not initialized.");
+  status(message.requestId, { phase: "searching", message: "Searching across the playlist by meaning…" });
+  const [queryVector] = await provider.embedQueries([message.query]);
+  assertLive(message.requestId);
+  if (!queryVector) throw new Error("The query could not be embedded.");
+  const results: Array<{ transcriptId: string; results: SearchResult[] }> = [];
+  for (const transcriptId of message.transcriptIds.slice(0, 1_000)) {
+    assertLive(message.requestId);
+    const index = await recallIndex(transcriptId);
+    if (index) results.push({ transcriptId, results: scoreIndex(index, queryVector, message.limitPerTranscript) });
+    await yieldToLoop();
+  }
+  post({ type: "playlist-results", requestId: message.requestId, results });
+  status(message.requestId, { phase: "ready", message: "Playlist meaning search is ready." });
 }
 
 worker.onmessage = (event: MessageEvent<SemanticWorkerRequest>) => {
@@ -261,7 +305,7 @@ worker.onmessage = (event: MessageEvent<SemanticWorkerRequest>) => {
   }
 
   if (message.type === "dispose") {
-    loaded = undefined;
+    loaded.clear();
     const previous = provider;
     provider = undefined;
     providerKey = undefined;
@@ -270,7 +314,11 @@ worker.onmessage = (event: MessageEvent<SemanticWorkerRequest>) => {
     return;
   }
 
-  const task = message.type === "index" ? indexTranscript(message) : search(message);
+  const task = message.type === "index"
+    ? indexTranscript(message)
+    : message.type === "search-many"
+      ? searchMany(message)
+      : search(message);
   void task
     .catch((error: unknown) => {
       if (error instanceof Cancelled) {

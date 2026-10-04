@@ -33,7 +33,10 @@ export const MODELS: Record<string, ModelDescriptor> = {
   "e5-small": {
     id: "e5-small",
     repo: "Xenova/multilingual-e5-small",
-    revision: "main",
+    // Pinned to the repository's commit of 2025-07-22 (read from the Hugging Face API on
+    // 2026-10-03). `main` was documented as pinned but was not: an upstream change would have
+    // altered results while every cached embedding kept its key.
+    revision: "761b726dd34fb83930e26aab4e9ac3899aa1fa78",
     dimension: 384,
     dtype: "q8",
     pooling: "mean",

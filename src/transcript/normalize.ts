@@ -13,7 +13,7 @@
  */
 
 /** Bumped whenever normalization output changes, so caches and embeddings invalidate. */
-export const NORMALIZER_VERSION = 3;
+export const NORMALIZER_VERSION = 4;
 
 const ARABIC_DIACRITICS = /[ؐ-ًؚ-ٰٟۖ-ۭ]/u;
 const COMBINING_MARK = /\p{M}/u;
@@ -119,7 +119,9 @@ export function normalize(value: string): NormalizedText {
       : folded.normalize("NFKD").toLowerCase();
 
     let emitted = false;
-    for (const unit of decomposed) {
+    const decomposedUnits = Array.from(decomposed);
+    for (let unitIndex = 0; unitIndex < decomposedUnits.length; unitIndex += 1) {
+      const unit = decomposedUnits[unitIndex]!;
       if (COMBINING_MARK.test(unit)) {
         // Accents are stripped; attribute them to whatever they decorate.
         if (emitted || out.length) extendLast(to);
@@ -131,6 +133,20 @@ export function normalize(value: string): NormalizedText {
       // so normalization was not idempotent and cache keys were unstable.
       if (unit === TATWEEL || ARABIC_DIACRITICS.test(unit)) {
         if (emitted || out.length) extendLast(to);
+        continue;
+      }
+      // Compatibility decomposition can introduce an apostrophe that was not visible in the
+      // source code point: U+0149 (ŉ), for example, becomes U+02BC + "n". Treat that generated
+      // mark exactly like a source apostrophe when it sits inside a word; otherwise a first pass
+      // emitted it and a second pass removed it, making cache/search normalization non-idempotent.
+      const previousUnit = out.at(-1) ?? "";
+      const followingUnit = decomposedUnits.slice(unitIndex + 1).find((candidate) => !COMBINING_MARK.test(candidate)) ?? after;
+      if (
+        APOSTROPHE.test(unit) &&
+        LETTER_OR_NUMBER.test(previousUnit) &&
+        LETTER_OR_NUMBER.test(followingUnit)
+      ) {
+        extendLast(to);
         continue;
       }
       if (WHITESPACE.test(unit) || PUNCTUATION_OR_SYMBOL.test(unit)) {

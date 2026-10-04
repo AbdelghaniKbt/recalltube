@@ -18,6 +18,10 @@ import {
 } from "../../storage/indexeddb";
 import { parseStateChanged, type ContentRequest, type ContentResponse } from "../../types/messages";
 import type { PageSnapshot, SearchResult, TranscriptDocument } from "../../types/transcript";
+import type { PlaylistInventory } from "../../types/playlist";
+import { PlaylistView } from "./PlaylistView";
+import { playlistContextFromUrl } from "../../playlist/url";
+import { shouldAdopt } from "./snapshot-policy";
 import { describeFailure, formatBytes, formatTime, timestampedLink } from "./format";
 
 type SearchMode = "exact" | "meaning" | "ask";
@@ -102,6 +106,8 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<SearchMode>("exact");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [scope, setScope] = useState<"video" | "playlist">("video");
+  const [playlist, setPlaylist] = useState<PlaylistInventory>();
 
   const [aiEnabled, setAiEnabled] = useState(false);
   const [askEnabled, setAskEnabled] = useState(false);
@@ -122,10 +128,18 @@ export default function App() {
   const indexAbort = useRef<AbortController>(undefined);
   const askAbort = useRef<AbortController>(undefined);
   const tabRef = useRef<number>(undefined);
+  const playlistRef = useRef<PlaylistInventory | undefined>(undefined);
+  const refreshEpoch = useRef(0);
+  /** The transcript id most recently written to the local cache by this panel. */
+  const savedTranscript = useRef<string>(undefined);
+  /** Mirror of `snapshot` plus the page document it came from, for the adoption decision. */
+  const snapshotRef = useRef<PageSnapshot>({ status: "idle", generation: 0 });
+  const heldDocument = useRef<string>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   tabRef.current = tabId;
+  snapshotRef.current = snapshot;
   const transcript: TranscriptDocument | undefined = snapshot.document;
   const transcriptId = transcript?.transcriptId;
 
@@ -145,12 +159,32 @@ export default function App() {
 
   useEffect(() => setActiveIndex(0), [query, mode]);
 
-  const adoptSnapshot = useCallback(async (next: PageSnapshot, forTab: number | undefined) => {
+  const adoptSnapshot = useCallback(async (next: PageSnapshot, forTab: number | undefined, documentId?: string) => {
     // A snapshot for a tab we are no longer looking at is stale by definition.
     if (forTab !== undefined && forTab !== tabRef.current) return;
-    setSnapshot((current) => (next.generation < current.generation && next.videoId === current.videoId ? current : next));
+    // Generations are comparable only within one page document; see snapshot-policy.ts.
+    if (!shouldAdopt({ snapshot: snapshotRef.current, documentId: heldDocument.current }, { snapshot: next, documentId })) return;
+    heldDocument.current = documentId;
+    // A reloaded or re-navigated page reports "loading" for a video whose transcript this panel
+    // already holds. Keep showing that transcript (as the saved copy) instead of a reading state the
+    // cache lookup below would replace a moment later; the page's fresh result still supersedes it.
+    const previous = snapshotRef.current;
+    const carried =
+      next.status === "loading" && !next.document && previous.document && previous.videoId === next.videoId
+        ? { ...next, status: "ready" as const, document: { ...previous.document, source: "cache" as const } }
+        : next;
+    snapshotRef.current = carried;
+    setSnapshot(carried);
     if (next.document) {
-      void saveTranscript(next.document).catch(() => undefined);
+      // Every poll and tab switch re-delivers the same document; one write per transcript is enough.
+      // Each write also ran the store's eviction count, so this was a cache round-trip per refresh.
+      const { transcriptId } = next.document;
+      if (savedTranscript.current !== transcriptId) {
+        savedTranscript.current = transcriptId;
+        void saveTranscript(next.document).catch(() => {
+          savedTranscript.current = undefined;
+        });
+      }
     } else if ((next.status === "loading" || next.status === "failed") && next.videoId) {
       const cached = await loadTranscriptForVideo(next.videoId).catch(() => undefined);
       // Once a transcript has been captured for a video it stays usable, even when acquisition
@@ -166,7 +200,10 @@ export default function App() {
   }, []);
 
   const refresh = useCallback(async () => {
+    const epoch = ++refreshEpoch.current;
+    const isCurrent = () => epoch === refreshEpoch.current;
     const tab = await activeYoutubeTab();
+    if (!isCurrent()) return;
     if (!tab?.id) {
       setTabId(undefined);
       setSnapshot({ status: "idle", generation: 0 });
@@ -175,18 +212,55 @@ export default function App() {
     setTabId(tab.id);
     tabRef.current = tab.id;
 
-    // The content script registers at document_idle, so a panel opened during page load can race
-    // it. Retry briefly before concluding the tab is not connected at all.
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    // The content script registers at document_idle, which on YouTube can be several seconds after
+    // the panel opens. While Chrome still reports the tab as loading, an unanswered message means
+    // "not yet", not "orphaned": keep asking (bounded) and show the reading state, so a panel
+    // opened early does not flash "This tab needs a reload" at a tab that is about to connect.
+    const loadingDeadline = Date.now() + 12_000;
+    for (let attempt = 0; ; attempt += 1) {
       try {
         const response = await sendToTab(tab.id, { type: "recalltube:get-state" });
-        if (response.ok && response.snapshot) await adoptSnapshot(response.snapshot, tab.id);
+        const pageSnapshot = response.ok ? response.snapshot : undefined;
+        if (pageSnapshot) await adoptSnapshot(pageSnapshot, tab.id, response.ok ? response.documentId : undefined);
+        const playlistResponse = await sendToTab(tab.id, { type: "recalltube:get-playlist", complete: false }).catch(() => undefined);
+        if (!isCurrent()) return;
+        const discovered = playlistResponse?.ok ? playlistResponse.playlist : undefined;
+        // One failed lookup is not evidence the user left the playlist: YouTube’s page can be too
+        // busy to answer the bridge within its timeout while a playlist is indexing. Dropping the
+        // inventory then switched the panel to "This video" mid-job and never switched back. Keep
+        // what is known while the tab’s own URL still names the same playlist.
+        const known = playlistRef.current;
+        const urlPlaylistId = tab.url ? playlistContextFromUrl(tab.url)?.playlistId : undefined;
+        const kept = !discovered && known && urlPlaylistId === known.playlistId ? known : undefined;
+        const next = discovered ?? kept;
+        setPlaylist(next);
+        playlistRef.current = next;
+        if (!next) setScope("video");
+        else if (discovered && !kept && !pageSnapshot?.document) setScope("playlist");
         return;
       } catch {
-        if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 350));
+        const current = await browser.tabs.get(tab.id).catch(() => undefined);
+        if (!isCurrent()) return;
+        const stillLoading = current?.status === "loading" && Date.now() < loadingDeadline;
+        if (!stillLoading && attempt >= 2) break;
+        if (stillLoading) {
+          let videoId: string | undefined;
+          try {
+            videoId = (current?.url ? new URL(current.url).searchParams.get("v") : undefined) ?? undefined;
+          } catch {
+            videoId = undefined;
+          }
+          setSnapshot((existing) =>
+            existing.status === "idle" || existing.reason === "tab-not-connected"
+              ? { status: "loading", generation: 0, videoId }
+              : existing
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 350));
       }
     }
 
+    if (!isCurrent()) return;
     setSnapshot({
       status: "failed",
       generation: 0,
@@ -195,7 +269,7 @@ export default function App() {
         {
           adapter: "side-panel",
           outcome: "failed",
-          detail: "No RecallTube content script answered in this tab after 3 attempts.",
+          detail: "No RecallTube content script answered in this tab once it had finished loading.",
           elapsedMs: 0,
         },
       ],
@@ -213,9 +287,20 @@ export default function App() {
       if (sender.id && sender.id !== browser.runtime.id) return;
       const parsed = parseStateChanged(message);
       if (!parsed) return;
-      void adoptSnapshot(parsed.snapshot, sender.tab?.id);
+      void adoptSnapshot(parsed.snapshot, sender.tab?.id, parsed.documentId);
     };
-    const onActivated = () => void refresh();
+    const onActivated = (activeInfo: { windowId: number }) => {
+      // Playlist workers become the active tab of their own popup. `tabs.onActivated`
+      // fires for that window too; following it made the side panel detach from the user's playlist
+      // and switch to the worker's single-video state. Only activations in the window that owns
+      // this side-panel surface are relevant.
+      void browser.windows
+        .getCurrent()
+        .then((current) => {
+          if (current.id === activeInfo.windowId) void refresh();
+        })
+        .catch(() => undefined);
+    };
     const onUpdated = (updatedTabId: number, changes: { url?: string }) => {
       // Only react to the tab we are attached to, and only to URL changes — the alpha refreshed on
       // every update in every tab.
@@ -242,6 +327,9 @@ export default function App() {
   }, [transcriptId]);
 
   useEffect(() => () => client.current?.dispose(), []);
+
+  /** One worker — one loaded model — shared by the current-video and playlist surfaces. */
+  const semanticClient = useCallback(() => (client.current ??= new SemanticSearchClient(setModelStatus)), []);
 
   // Index for meaning/ask once, per transcript.
   useEffect(() => {
@@ -428,7 +516,23 @@ export default function App() {
             : ""}
       </div>
 
-      {!transcript ? (
+      {playlist && (
+        <nav className="scope-switch" aria-label="Search scope">
+          <button aria-pressed={scope === "video"} className={scope === "video" ? "active" : ""} onClick={() => setScope("video")} disabled={!transcript}>This video</button>
+          <button aria-pressed={scope === "playlist"} className={scope === "playlist" ? "active" : ""} onClick={() => setScope("playlist")}>Entire playlist</button>
+        </nav>
+      )}
+
+      {scope === "playlist" && playlist && tabId ? (
+        <PlaylistView
+          tabId={tabId}
+          inventory={playlist}
+          aiEnabled={aiEnabled}
+          askEnabled={askEnabled}
+          onEnableAi={enableAi}
+          semanticClient={semanticClient}
+        />
+      ) : !transcript ? (
         <EmptyState
           snapshot={snapshot}
           onRetry={() => void refresh()}
@@ -656,6 +760,8 @@ export default function App() {
           askEnabled={askEnabled}
           videoId={transcript?.video.id}
           diagnostics={snapshot.diagnostics}
+          snapshot={snapshot}
+          playlistId={playlist?.playlistId}
           onClose={() => setShowSettings(false)}
           onDisableAi={() => void disableAi()}
           onToggleAsk={async (value) => {
@@ -667,6 +773,7 @@ export default function App() {
             else if (target === "transcripts") await clearStore("transcripts");
             else if (target === "embeddings") await clearStore("embeddings");
             else if (target === "model") await clearModelCache();
+            else if (target === "all") await clearStore("all");
             setUsage(await storageUsage().catch(() => undefined));
             setIndexedTranscript(undefined);
             toast("Cleared");
@@ -804,6 +911,8 @@ function SettingsPanel({
   askEnabled,
   videoId,
   diagnostics,
+  snapshot,
+  playlistId,
   onClose,
   onDisableAi,
   onToggleAsk,
@@ -816,10 +925,12 @@ function SettingsPanel({
   askEnabled: boolean;
   videoId?: string;
   diagnostics?: PageSnapshot["diagnostics"];
+  snapshot?: PageSnapshot;
+  playlistId?: string;
   onClose: () => void;
   onDisableAi: () => void;
   onToggleAsk: (value: boolean) => Promise<void>;
-  onClear: (target: "video" | "transcripts" | "embeddings" | "model") => Promise<void>;
+  onClear: (target: "video" | "transcripts" | "embeddings" | "model" | "all") => Promise<void>;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -829,11 +940,45 @@ function SettingsPanel({
       ? await sendToTab(tabId, { type: "recalltube:diagnostics" }).catch(() => undefined)
       : undefined;
     // Deliberately excludes transcript text — a diagnostics report is about adapters, not content.
+    const liveSnapshot = live && live.ok ? live.snapshot : undefined;
+    const page = liveSnapshot ?? snapshot;
+    // Playlist items keep their own adapter outcomes; they are the only record of what happened in
+    // a worker that has since closed.
+    const playlistJob = playlistId
+      ? await (browser.runtime.sendMessage({ type: "recalltube:playlist-get", playlistId }) as Promise<{
+          job?: import("../../types/playlist").PlaylistIndexJob;
+        }>).then((response) => response?.job).catch(() => undefined)
+      : undefined;
     const report = {
       version: browser.runtime.getManifest().version,
       userAgent: navigator.userAgent,
       webgpu: "gpu" in navigator,
+      page: page
+        ? {
+            status: page.status,
+            reason: page.reason,
+            videoId: page.videoId,
+            generation: page.generation,
+            transcriptPanel: page.transcriptPanel,
+            cues: page.document?.cues.length,
+            source: page.document?.source,
+          }
+        : undefined,
       adapters: (live && live.ok ? live.diagnostics : undefined) ?? diagnostics ?? [],
+      playlist: playlistJob
+        ? {
+            playlistId: playlistJob.playlistId,
+            state: playlistJob.state,
+            lastError: playlistJob.lastError,
+            items: playlistJob.items.map((item) => ({
+              position: item.position + 1,
+              videoId: item.videoId,
+              state: item.state,
+              failureReason: item.failureReason,
+              adapters: item.diagnostics,
+            })),
+          }
+        : undefined,
     };
     await navigator.clipboard.writeText(JSON.stringify(report, null, 2));
     setCopied(true);
@@ -870,6 +1015,10 @@ function SettingsPanel({
               <dd>{usage.embeddingRecords}</dd>
             </div>
             <div>
+              <dt>Saved playlists</dt>
+              <dd>{usage.playlists}</dd>
+            </div>
+            <div>
               <dt>Storage used</dt>
               <dd>{formatBytes(usage.usageBytes)}</dd>
             </div>
@@ -880,6 +1029,7 @@ function SettingsPanel({
           {videoId && <button onClick={() => void onClear("video")}>Clear this video</button>}
           <button onClick={() => void onClear("transcripts")}>Clear all transcripts</button>
           <button onClick={() => void onClear("embeddings")}>Clear embeddings</button>
+          <button onClick={() => void onClear("all")}>Clear all local indexes</button>
           <button onClick={() => void onClear("model")}>Delete downloaded model</button>
         </div>
 

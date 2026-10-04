@@ -16,7 +16,7 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 interface Pending {
   resolve: (value: never) => void;
   reject: (error: Error) => void;
-  kind: "index" | "search";
+  kind: "index" | "search" | "search-many";
   transcriptId: string;
 }
 
@@ -27,11 +27,28 @@ export interface IndexOutcome {
   elapsedMs: number;
 }
 
+type StatusListener = (status: ModelStatus) => void;
+
 export class SemanticSearchClient {
   private worker?: Worker;
   private readonly pending = new Map<string, Pending>();
+  private readonly statusListeners = new Set<StatusListener>();
 
-  constructor(private readonly onStatus: (status: ModelStatus) => void) {}
+  constructor(onStatus?: StatusListener) {
+    if (onStatus) this.statusListeners.add(onStatus);
+  }
+
+  /**
+   * The current-video and playlist surfaces share one client — and therefore one worker and one
+   * loaded model. Each surface subscribes to status separately; two clients meant two 118 MB model
+   * instances in memory whenever both surfaces had been used.
+   */
+  addStatusListener(listener: StatusListener): () => void {
+    this.statusListeners.add(listener);
+    return () => {
+      this.statusListeners.delete(listener);
+    };
+  }
 
   /** The worker — and therefore the model download — is only created on first real use. */
   private ensureWorker(): Worker {
@@ -52,7 +69,7 @@ export class SemanticSearchClient {
 
   private handle(message: SemanticWorkerResponse) {
     if (message.type === "status") {
-      this.onStatus(message.status);
+      for (const listener of this.statusListeners) listener(message.status);
       return;
     }
 
@@ -82,6 +99,11 @@ export class SemanticSearchClient {
           return;
         }
         (pending.resolve as (value: SearchResult[]) => void)(message.results);
+        return;
+      case "playlist-results":
+        (pending.resolve as (value: Map<string, SearchResult[]>) => void)(
+          new Map(message.results.map((entry) => [entry.transcriptId, entry.results]))
+        );
     }
   }
 
@@ -141,6 +163,20 @@ export class SemanticSearchClient {
       { type: "search", transcriptId, query, limit },
       "search",
       transcriptId,
+      signal
+    );
+  }
+
+  searchMany(
+    transcriptIds: string[],
+    query: string,
+    limitPerTranscript = 8,
+    signal?: AbortSignal
+  ): Promise<Map<string, SearchResult[]>> {
+    return this.request<Map<string, SearchResult[]>>(
+      { type: "search-many", transcriptIds: [...new Set(transcriptIds)].slice(0, 1_000), query, limitPerTranscript },
+      "search-many",
+      "playlist",
       signal
     );
   }

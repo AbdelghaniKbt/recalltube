@@ -34,6 +34,13 @@ export type SemanticWorkerRequest =
       chunks: TranscriptChunk[];
     }
   | { type: "search"; requestId: string; transcriptId: string; query: string; limit: number }
+  | {
+      type: "search-many";
+      requestId: string;
+      transcriptIds: string[];
+      query: string;
+      limitPerTranscript: number;
+    }
   | { type: "cancel"; requestId: string; targetRequestId: string }
   | { type: "dispose"; requestId: string };
 
@@ -49,5 +56,10 @@ export type SemanticWorkerResponse =
       elapsedMs: number;
     }
   | { type: "results"; requestId: string; transcriptId: string; results: SearchResult[] }
+  | {
+      type: "playlist-results";
+      requestId: string;
+      results: Array<{ transcriptId: string; results: SearchResult[] }>;
+    }
   | { type: "cancelled"; requestId: string }
   | { type: "error"; requestId: string; error: string; recoverable: boolean };

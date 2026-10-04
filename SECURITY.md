@@ -17,8 +17,8 @@ RecallTube's security model is built around four boundaries:
   never as HTML, and Ask mode fences it, labels it untrusted, and validates every citation against
   the evidence actually supplied.
 - **The page is untrusted.** The main-world bridge holds no privileges; its payload is validated
-  field by field and caption URLs are allowlisted to YouTube's timed-text endpoint before any
-  credentialed request.
+  field by field, playlist ids/video ids are bounded and validated, thumbnail hosts are allowlisted,
+  and caption URLs are allowlisted to YouTube's timed-text endpoint before any credentialed request.
 - **No remote code.** All executable code ships inside the package. The ONNX Runtime is bundled,
   not fetched. `npm run build` fails if the artifact references any host outside
   `youtube.com`, `huggingface.co` or `*.hf.co`.
@@ -27,6 +27,9 @@ RecallTube's security model is built around four boundaries:
   shape, sender tab, video identity, and generation before it can affect the active panel.
 - **Storage is local and erasable.** Transcript and embedding caches are content-addressed,
   bounded, and removable from the extension's privacy dialog.
+- **Background workers are explicitly owned.** Playlist jobs persist the exact tab/window ids they
+  created, run only one worker globally, never close tabs by URL matching, and verify cleanup before
+  discarding ownership metadata.
 
 Residual risks remain: YouTube can change its undocumented page structures, a browser or ONNX
 Runtime vulnerability is outside RecallTube's trust boundary, and a malicious model file could

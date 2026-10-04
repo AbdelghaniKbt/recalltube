@@ -18,12 +18,17 @@ asserts the same at runtime (`tests/e2e/extension.spec.ts`).
 
 | What | From | When |
 | --- | --- | --- |
-| Caption tracks for the video you are watching | `https://www.youtube.com/api/timedtext` | When you open a YouTube video with the panel open |
-| Embedding model weights and tokenizer (~118 MB) | `huggingface.co`, served via `*.hf.co` | **Only after you explicitly enable meaning search**, once |
+| Caption tracks for the current video or a playlist item | `https://www.youtube.com/api/timedtext` | When RecallTube acquires a transcript |
+| Embedding model weights and tokenizer (~118 MB) | `huggingface.co`, served via its `cdn-lfs` hosts and `*.hf.co` | **Only after you explicitly enable meaning search**, once |
 
 Caption requests are made with your existing YouTube session so that captions you are already
-entitled to are readable. RecallTube does not bypass any access control and does not request
-captions for videos the page has not offered.
+entitled to are readable. For an explicitly indexed playlist, RecallTube requests only the videos
+YouTube listed on that playlist page. It processes one item at a time in a fresh muted, minimized
+extension-owned worker whose playback is paused. If the native transcript fallback must render, that
+worker is shown as a small unfocused window in a corner of your window, then its panel and window are
+closed. A video the player reports as removed, private or not yet started is never shown. RecallTube
+decides which tabs are its workers from the tab ids it created in this browser session, never from a
+URL. RecallTube does not bypass access control.
 
 The model download is a plain file fetch. It reveals your IP address and User-Agent to Hugging
 Face, exactly as visiting their site would. It does **not** include your query, the video, or any
@@ -35,17 +40,21 @@ enabling AI.
 
 ### Hosts the extension may contact
 
-`www.youtube.com`, `youtube.com`, `huggingface.co`, `*.hf.co`. That is the complete list, and it is
+`www.youtube.com`, `youtube.com`, `huggingface.co`, `cdn-lfs.huggingface.co`,
+`cdn-lfs-us-1.huggingface.co`, `*.hf.co`. That is the complete list — it is exactly the
+`host_permissions` array in `manifest.json` — and it is
 enforced at build time and asserted in tests.
 
 ## What is stored locally
 
 In **IndexedDB** (database `recalltube`):
 
-- **Transcripts** — cues, timings, video id and title, caption track and language. Capped at 200
+- **Transcripts** — cues, timings, video id and title, caption track and language. Capped at 1,000
   transcripts, oldest evicted first.
 - **Embeddings** — one `Float32Array` per indexed transcript plus the chunk text it was computed
-  from. Capped at 40 records, oldest evicted first.
+  from. Capped at 250 records, oldest evicted first.
+- **Playlist inventories and jobs** — video ids, titles, ordering, indexing state, failures and
+  coverage for up to 100 playlists / 25 recent jobs. No query history is stored.
 
 In **CacheStorage**: the downloaded model weights, cached by `transformers.js`.
 
@@ -61,6 +70,7 @@ Open the panel and click the gear icon. You can:
 - **Clear this video** — its transcripts and embeddings.
 - **Clear all transcripts**.
 - **Clear embeddings**.
+- **Clear all local indexes** — transcripts, embeddings, playlist inventories and jobs.
 - **Delete downloaded model** — removes the cached weights; meaning search will re-download if you
   use it again.
 - **Turn off meaning search** — revokes consent and disposes the model from memory.
@@ -74,12 +84,12 @@ Removing the extension deletes all of it.
 | --- | --- |
 | `sidePanel` | The RecallTube UI is a side panel. |
 | `storage` | Remembers the two consent booleans. |
-| `tabs` | Identifies which tab holds the YouTube video and sends it seek/refresh messages. `activeTab` is not sufficient: the panel must follow tab switches and SPA navigation without a user gesture per video. |
-| `https://*.youtube.com/*` | Read caption tracks for the video you are watching. |
-| `https://huggingface.co/*`, `https://*.hf.co/*` | Download model weights after consent. |
+| `tabs` | Follows YouTube navigation, seeks to results, and creates one temporary muted worker tab after you explicitly index a playlist. `activeTab` cannot support resumable playlist work or tab switches. |
+| `https://*.youtube.com/*` | Read playlist inventory and caption tracks already exposed by YouTube pages. |
+| `https://huggingface.co/*`, `https://cdn-lfs.huggingface.co/*`, `https://cdn-lfs-us-1.huggingface.co/*`, `https://*.hf.co/*` | Download model weights after consent. Hugging Face serves the weight files themselves from its `cdn-lfs` hosts. |
 
 There is no `<all_urls>`, no `scripting`, no `webRequest`, no `cookies`, and no host permission
-beyond the four above. `src/build/artifact.test.ts` fails the build if that changes.
+beyond the YouTube and Hugging Face entries above. `src/build/artifact.test.ts` fails the build if that changes.
 
 ## Caption access is an unofficial integration
 
@@ -93,14 +103,15 @@ video or audio streams.
 
 In practice YouTube now frequently answers the timed-text endpoint with an empty body unless the
 request carries proof-of-origin context that only its own player attaches. RecallTube does not
-reconstruct that. Instead it offers — on an explicit click, never silently — to open YouTube's own
-transcript panel in the page you already have open, and reads the caption rows YouTube itself
-renders there. No extra network request is made for those rows.
+reconstruct that. It falls back to YouTube's own transcript control and reads the rows YouTube
+renders. For a single video this happens in the current watch page. For an explicitly indexed
+playlist it happens in a separate extension-owned worker, which is briefly foregrounded when
+rendering is required and then closed. No extra transcript service is contacted.
 
 ## Ask mode limitations
 
-- Ask answers only from passages retrieved from the current video's transcript. It has no access to
-  the wider internet and is instructed not to use general knowledge.
+- Ask answers only from passages retrieved from the current video or indexed playlist. It has no
+  access to the wider internet and is instructed not to use general knowledge.
 - When the browser provides an on-device language model **and you enable it**, Ask can write a short
   prose answer. That model runs locally; nothing is sent anywhere. There is no cloud fallback.
 - Otherwise Ask returns the strongest transcript passages verbatim, with timestamps.

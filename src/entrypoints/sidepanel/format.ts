@@ -19,6 +19,12 @@ export function timestampedLink(videoId: string, seconds: number): string {
   return `https://www.youtube.com/watch?v=${safeId}&t=${Math.max(0, Math.floor(seconds))}s`;
 }
 
+export function playlistTimestampedLink(playlistId: string, videoId: string, seconds: number): string {
+  const safePlaylist = playlistId.replace(/[^A-Za-z0-9_-]/gu, "").slice(0, 128);
+  const safeVideo = videoId.replace(/[^A-Za-z0-9_-]/gu, "").slice(0, 24);
+  return `https://www.youtube.com/watch?v=${safeVideo}&list=${safePlaylist}&t=${Math.max(0, Math.floor(seconds))}s`;
+}
+
 export function formatBytes(bytes?: number): string {
   if (bytes === undefined) return "unknown";
   if (bytes < 1024) return `${bytes} B`;
@@ -74,6 +80,11 @@ export function describeFailure(reason: AcquisitionFailureReason): { title: stri
       return {
         title: "Captions are not accessible",
         body: "YouTube refused the caption request for this video. This happens with some restricted, private or region-limited videos.",
+      };
+    case "video-unavailable":
+      return {
+        title: "This video is unavailable",
+        body: "YouTube's player reports this video as removed or not playable here, so there are no captions to read. RecallTube did not open the transcript panel.",
       };
     case "navigation-cancelled":
       return { title: "Loading was cancelled", body: "You navigated away before the transcript finished loading." };

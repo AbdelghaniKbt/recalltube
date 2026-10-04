@@ -1,9 +1,9 @@
 {
   "name": "recalltube",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Local-first transcript search for the YouTube video you are watching.",
+  "description": "Local-first transcript search across YouTube videos and playlists.",
   "license": "Apache-2.0",
   "author": "Abdelghani KABOT",
   "repository": {
@@ -37,6 +37,7 @@
     "verify:artifact": "node scripts/harden-artifact.mjs",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:live": "node scripts/live-youtube-smoke.mjs",
+    "test:live:playlist": "node scripts/live-playlist-smoke.mjs",
     "test:live:reference": "tsx scripts/live-reference-smoke.ts",
     "test:reference": "tsx scripts/reference-feature-smoke.ts",
     "test:reference:ui": "tsx scripts/reference-ui-smoke.ts",

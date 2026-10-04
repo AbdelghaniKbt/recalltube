@@ -10,6 +10,11 @@ import {
   findFixture,
   NO_CAPTIONS,
   playerResponseFor,
+  PLAYLIST_SECOND,
+  CLOSED_THEN_FRESH,
+  STALE_FOREVER,
+  STALE_THEN_FRESH,
+  UNAVAILABLE,
   watchPageHtml,
   type VideoFixture,
 } from "./fixtures";
@@ -23,7 +28,6 @@ import {
  */
 
 let harness: Harness;
-
 async function mockYouTube(context: BrowserContext) {
   await context.route(/^https:\/\/www\.youtube\.com\/api\/timedtext/, async (route) => {
     const url = new URL(route.request().url());
@@ -45,6 +49,23 @@ async function mockYouTube(context: BrowserContext) {
     const fixture = findFixture(url.searchParams.get("v")) ?? ENGLISH_TALK;
     return route.fulfill({ status: 200, contentType: "text/html", body: watchPageHtml(fixture) });
   });
+
+  // YouTube's own transcript request, which a fixture page issues when it "fetches" fresh rows. The
+  // extension only observes it through Resource Timing; it never makes or reads this request.
+  await context.route(/^https:\/\/www\.youtube\.com\/youtubei\/v1\/get_transcript/, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: "{}" })
+  );
+}
+
+/** The automatic first attempt's outcome for a fixture tab, once it is no longer loading. */
+async function settledState(control: Page, videoId: string, timeoutMs: number) {
+  const read = () =>
+    control.evaluate(async (id) => {
+      const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url?.includes(id));
+      return tab?.id === undefined ? undefined : (await chrome.tabs.sendMessage(tab.id, { type: "recalltube:get-state" }))?.snapshot;
+    }, videoId);
+  await expect.poll(async () => (await read())?.status, { timeout: timeoutMs }).toMatch(/ready|failed/u);
+  return read();
 }
 
 async function openWatch(fixture: VideoFixture): Promise<Page> {
@@ -82,6 +103,16 @@ describe("extension smoke", () => {
 });
 
 describe("caption acquisition against a mock YouTube", () => {
+  it("acquires the playlist worker fixture directly", async () => {
+    const page = await openWatch(PLAYLIST_SECOND);
+    await page.waitForTimeout(3_000);
+    const requested = harness.externalRequests.filter(
+      (url) => url.includes("/api/timedtext") && url.includes(PLAYLIST_SECOND.id)
+    );
+    expect(requested.length).toBeGreaterThan(0);
+    await page.close();
+  }, 60_000);
+
   it("acquires and parses a manual English track", async () => {
     const page = await openWatch(ENGLISH_TALK);
     const snapshot = await page.evaluate(async () => {
@@ -108,6 +139,102 @@ describe("caption acquisition against a mock YouTube", () => {
     expect(after).toBe(before);
     await page.close();
   }, 60_000);
+
+  it("keeps a bounded panel watch only after a failure, never behind a ready transcript", async () => {
+    // A video without captions used to leave a whole-document MutationObserver attached for the
+    // life of the tab, walking every shadow root 2.5 times a second during playback. The watch is
+    // now armed only in the failed state (and re-armed by a user gesture) and is reported in the
+    // page's diagnostics so it can be checked here and in a user's report.
+    const failing = await openWatch(NO_CAPTIONS);
+    const ready = await openWatch(ENGLISH_TALK);
+    const control = await harness.openSidePanel();
+    const diagnosticsFor = (videoId: string) =>
+      control.evaluate(async (id) => {
+        const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url?.includes(id));
+        if (!tab?.id) return undefined;
+        const response = await chrome.tabs.sendMessage(tab.id, { type: "recalltube:diagnostics" });
+        return {
+          status: response?.snapshot?.status,
+          watch: response?.diagnostics?.find((entry: { adapter: string }) => entry.adapter === "panel-watch")?.detail,
+        };
+      }, videoId);
+    await expect.poll(async () => (await diagnosticsFor(NO_CAPTIONS.id))?.status, { timeout: 30_000 }).toBe("failed");
+    await expect.poll(async () => (await diagnosticsFor(ENGLISH_TALK.id))?.status, { timeout: 30_000 }).toBe("ready");
+    expect((await diagnosticsFor(NO_CAPTIONS.id))?.watch).toMatch(/^armed/u);
+    expect((await diagnosticsFor(ENGLISH_TALK.id))?.watch).toBe("idle");
+    await control.close();
+    await failing.close();
+    await ready.close();
+  }, 90_000);
+
+  it("reports a removed video as unavailable at once, without opening YouTube's transcript UI", async () => {
+    // Before the player's verdict was read, a removed or private video spent the full native-stage
+    // wait looking for a transcript control that never renders, then reported "no captions".
+    const page = await openWatch(UNAVAILABLE);
+    const control = await harness.openSidePanel();
+    const started = Date.now();
+    const read = () =>
+      control.evaluate(async (id) => {
+        const tab = (await chrome.tabs.query({})).find((candidate) => candidate.url?.includes(id));
+        return tab?.id === undefined ? undefined : chrome.tabs.sendMessage(tab.id, { type: "recalltube:get-state" });
+      }, UNAVAILABLE.id);
+    await expect.poll(async () => (await read())?.snapshot?.status, { timeout: 30_000 }).toBe("failed");
+    const snapshot = (await read())?.snapshot;
+    expect(snapshot?.reason).toBe("video-unavailable");
+    expect(snapshot?.terminal).toBe(true);
+    // The player bridge answers immediately; only the bounded "player may lag" polling remains.
+    expect(Date.now() - started).toBeLessThan(20_000);
+    expect(snapshot?.diagnostics?.map((entry: { adapter: string }) => entry.adapter)).not.toContain("native-panel");
+    await control.close();
+    await page.close();
+  }, 60_000);
+
+  it("waits for YouTube to replace a previous video's rows instead of capturing them", async () => {
+    // Live, after an SPA navigation the expanded panel showed the previous video's rows for ~3 s
+    // until YouTube's get_transcript replaced them. Rows that existed before the open are accepted
+    // only once they change or YouTube has fetched a transcript.
+    const watch = await openWatch(STALE_THEN_FRESH);
+    const control = await harness.openSidePanel();
+    await watch.bringToFront();
+    const snapshot = await settledState(control, STALE_THEN_FRESH.id, 60_000);
+    expect(snapshot?.status, JSON.stringify(snapshot?.diagnostics)).toBe("ready");
+    expect(snapshot?.document?.cues.map((cue: { text: string }) => cue.text)).toEqual(["fresh 1", "fresh 2", "fresh 3"]);
+    expect(await watch.evaluate(() => (window as unknown as { nativeOpens: number }).nativeOpens)).toBe(1);
+    await control.close();
+    await watch.close();
+  }, 90_000);
+
+  it("never reports a previous video's rows as the transcript when YouTube fetches nothing", async () => {
+    const watch = await openWatch(STALE_FOREVER);
+    const control = await harness.openSidePanel();
+    await watch.bringToFront();
+    const snapshot = await settledState(control, STALE_FOREVER.id, 110_000);
+    expect(snapshot?.status, JSON.stringify(snapshot?.diagnostics)).toBe("failed");
+    expect(snapshot?.reason).toBe("captions-withheld");
+    const native = snapshot?.diagnostics?.find((entry: { adapter: string }) => entry.adapter === "native-panel");
+    expect(native?.detail).toMatch(/stopped: stale-rows/u);
+    expect(native?.detail).toMatch(/reopened once/u);
+    // The panel RecallTube opened is closed again, twice over.
+    expect(await watch.evaluate(() => document.querySelector("[target-id='engagement-panel-searchable-transcript']")?.getAttribute("visibility"))).toBe(
+      "ENGAGEMENT_PANEL_VISIBILITY_HIDDEN"
+    );
+    await control.close();
+    await watch.close();
+  }, 130_000);
+
+  it("reopens the panel once when the page closes it before any rows arrive", async () => {
+    // YouTube's navigation completion hides every engagement panel; a capture that started a moment
+    // too early loses its panel. One reopen, after a pause, recovers the transcript.
+    const watch = await openWatch(CLOSED_THEN_FRESH);
+    const control = await harness.openSidePanel();
+    await watch.bringToFront();
+    const snapshot = await settledState(control, CLOSED_THEN_FRESH.id, 60_000);
+    expect(snapshot?.status, JSON.stringify(snapshot?.diagnostics)).toBe("ready");
+    expect(snapshot?.document?.cues).toHaveLength(3);
+    expect(await watch.evaluate(() => (window as unknown as { nativeOpens: number }).nativeOpens)).toBe(2);
+    await control.close();
+    await watch.close();
+  }, 90_000);
 
   it("does not fall back to reporting no-captions when the endpoint refuses", async () => {
     const page = await openWatch(CAPTIONS_FORBIDDEN);

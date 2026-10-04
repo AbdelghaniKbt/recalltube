@@ -50,7 +50,7 @@ export default defineConfig({
   manifest: {
     name: "RecallTube — Search What You Remember",
     description:
-      "Search a YouTube video's captions by exact words or meaning and jump to the moment.",
+      "Search captions across YouTube videos or entire playlists and jump to the moment.",
     minimum_chrome_version: "116",
     permissions: ["storage", "sidePanel", "tabs"],
     host_permissions: [

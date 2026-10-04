@@ -1,12 +1,14 @@
 import type { CaptionTrackInfo, PageDataPayload } from "../types/messages";
 import type {
   AcquisitionFailureReason,
+  AcquisitionProgress,
   AdapterDiagnostic,
   CaptionTrackIdentity,
   TranscriptCue,
   TranscriptDocument,
 } from "../types/transcript";
-import { isAllowedCaptionUrl, parsePageDataPayload, trackIdentity } from "./bridge";
+import { isAllowedCaptionUrl, parsePageDataPayload, playabilityFailure, trackIdentity } from "./bridge";
+import { parseAssignedJson } from "./player-bootstrap";
 import { transcriptIdentity } from "./identity";
 import { coalesceCues, describePayload, PARSER_VERSION, parseJson3, parseTimedTextXml } from "./parsers";
 
@@ -30,11 +32,19 @@ export interface AcquisitionContext {
   preferredLanguage?: string;
   /** Navigation generation; results from an older generation are discarded. */
   generation: number;
+  /** Called as a long capture advances, so callers can wait on progress instead of a fixed clock. */
+  onProgress?: (phase: AcquisitionProgress["phase"], rows?: number, hidden?: boolean) => void;
 }
 
 export type AcquisitionResult =
   | { ok: true; transcript: TranscriptDocument; diagnostics: AdapterDiagnostic[] }
-  | { ok: false; reason: AcquisitionFailureReason; diagnostics: AdapterDiagnostic[] };
+  | {
+      ok: false;
+      reason: AcquisitionFailureReason;
+      diagnostics: AdapterDiagnostic[];
+      /** No later adapter can succeed either (the player says the video is unavailable). */
+      terminal?: boolean;
+    };
 
 export interface TranscriptAdapter {
   id: string;
@@ -84,7 +94,7 @@ export function currentVideoId(href: string = location.href): string | undefined
  * The payload is validated by `parsePageDataPayload`, which also allowlists every `baseUrl` to
  * YouTube's timed-text endpoint, so a forged page response cannot steer a credentialed fetch.
  */
-function requestPageData(signal: AbortSignal, timeoutMs = 3_000): Promise<PageDataPayload> {
+export function requestPageData(signal: AbortSignal, timeoutMs = 3_000): Promise<PageDataPayload> {
   const requestId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const cleanup = () => {
@@ -349,32 +359,170 @@ function deepQueryAll(root: ParentNode, selector: string): HTMLElement[] {
   return [...found];
 }
 
-/** Text from the rendered/composed subtree, including open shadow roots. */
-function composedText(node: Node): string {
-  if (node.nodeType === 3) return node.nodeValue ?? "";
-  if (node.nodeType !== 1 && node.nodeType !== 11) return "";
+/**
+ * Cold inactive tabs sometimes expose their HTML before page JavaScript initializes the player.
+ * Re-read that same YouTube watch document and parse its serialized player response without eval.
+ */
+async function requestSerializedPageData(signal: AbortSignal): Promise<PageDataPayload | undefined> {
+  const response = await fetch(location.href, { credentials: "include", signal });
+  if (!response.ok) return undefined;
+  const html = await response.text();
+  const raw = parseAssignedJson([html], ["ytInitialPlayerResponse"]);
+  if (!raw || typeof raw !== "object") return undefined;
+  const player = raw as Record<string, unknown>;
+  const details = player.videoDetails && typeof player.videoDetails === "object"
+    ? (player.videoDetails as Record<string, unknown>)
+    : undefined;
+  const captions = player.captions && typeof player.captions === "object"
+    ? (player.captions as Record<string, unknown>)
+    : undefined;
+  const renderer = captions?.playerCaptionsTracklistRenderer;
+  const tracks = renderer && typeof renderer === "object"
+    ? (renderer as Record<string, unknown>).captionTracks
+    : undefined;
+  const captionTracks = Array.isArray(tracks)
+    ? tracks.map((track) => {
+        if (!track || typeof track !== "object") return undefined;
+        const value = track as Record<string, unknown>;
+        const name = value.name && typeof value.name === "object" ? (value.name as Record<string, unknown>) : undefined;
+        const runs = Array.isArray(name?.runs)
+          ? name.runs.map((run) => run && typeof run === "object" ? String((run as Record<string, unknown>).text ?? "") : "").join("")
+          : undefined;
+        return {
+          baseUrl: value.baseUrl,
+          languageCode: value.languageCode,
+          name: name?.simpleText ?? runs ?? value.languageCode,
+          kind: value.kind,
+          isTranslatable: value.isTranslatable === true,
+        };
+      }).filter(Boolean)
+    : [];
+  const playability = player.playabilityStatus && typeof player.playabilityStatus === "object"
+    ? (player.playabilityStatus as Record<string, unknown>)
+    : undefined;
+  return parsePageDataPayload({
+    videoId: details?.videoId,
+    title: details?.title,
+    captionTracks,
+    playability: { status: playability?.status, reason: playability?.reason, isLive: details?.isLive === true },
+  });
+}
 
-  const element = node.nodeType === 1 ? (node as Element) : undefined;
-  if (element?.shadowRoot) return composedText(element.shadowRoot);
+/**
+ * Text from the rendered/composed subtree, including open shadow roots.
+ *
+ * With a `limit`, stops as soon as the text is known to be longer and returns `undefined`. The
+ * structural reader asks "is this element's text short enough to be one caption line?" of every
+ * element in a panel; answering that by materializing the text of each ancestor — up to the whole
+ * transcript for the list container — was a measured half of a 220-second main-thread stall.
+ */
+function composedText(node: Node): string;
+function composedText(node: Node, limit: number): string | undefined;
+function composedText(node: Node, limit = Number.POSITIVE_INFINITY): string | undefined {
+  const parts: string[] = [];
+  let length = 0;
+  const visit = (current: Node): boolean => {
+    if (current.nodeType === 3) {
+      const value = current.nodeValue ?? "";
+      parts.push(value);
+      length += value.length + 1;
+      return length <= limit;
+    }
+    if (current.nodeType !== 1 && current.nodeType !== 11) return true;
 
-  // A slot's assigned nodes are the rendered content. Falling back to its children keeps this
-  // useful in JSDOM and for slots that have no assignment.
-  if (element?.tagName.toLowerCase() === "slot") {
-    const slot = element as HTMLSlotElement;
-    const assigned = typeof slot.assignedNodes === "function" ? slot.assignedNodes({ flatten: true }) : [];
-    const children = assigned.length ? assigned : Array.from(slot.childNodes);
-    return children.map(composedText).join(" ");
+    const element = current.nodeType === 1 ? (current as Element) : undefined;
+    if (element?.shadowRoot) return visit(element.shadowRoot);
+
+    // A slot's assigned nodes are the rendered content. Falling back to its children keeps this
+    // useful in JSDOM and for slots that have no assignment.
+    let children: Node[] = Array.from(current.childNodes);
+    if (element?.tagName.toLowerCase() === "slot") {
+      const slot = element as HTMLSlotElement;
+      const assigned = typeof slot.assignedNodes === "function" ? slot.assignedNodes({ flatten: true }) : [];
+      if (assigned.length) children = assigned;
+    }
+    for (const child of children) {
+      if (!visit(child)) return false;
+    }
+    return true;
+  };
+  return visit(node) ? parts.join(" ") : undefined;
+}
+
+/** Parent across shadow boundaries. */
+function composedParent(node: Node): Node | null {
+  const parent = node.parentNode;
+  if (!parent) return null;
+  return parent.nodeType === 11 ? ((parent as ShadowRoot).host ?? null) : parent;
+}
+
+function composedContains(ancestor: Node, node: Node): boolean {
+  for (let current: Node | null = node; current; current = composedParent(current)) {
+    if (current === ancestor) return true;
   }
+  return false;
+}
 
-  return Array.from(node.childNodes).map(composedText).join(" ");
+/**
+ * The engagement-panel visibility governing `element`: its own `visibility` attribute or that of
+ * the nearest ancestor carrying one, across shadow boundaries.
+ *
+ * YouTube nests `ytd-transcript-renderer`, `ytd-transcript-search-panel-renderer` and
+ * `ytd-transcript-segment-list-renderer` inside the engagement panel, and only the panel carries
+ * the attribute. Answering "is this open?" for those inner renderers used to fall back to a full
+ * transcript read — once per renderer, per check, inside the close loop.
+ */
+function panelVisibility(element: Element): "expanded" | "hidden" | "unknown" {
+  for (let current: Node | null = element; current; current = composedParent(current)) {
+    if (current.nodeType !== 1) continue;
+    const value = (current as Element).getAttribute("visibility");
+    if (!value) continue;
+    if (/HIDDEN|COLLAPSED/iu.test(value)) return "hidden";
+    if (/EXPANDED|VISIBLE/iu.test(value)) return "expanded";
+  }
+  return "unknown";
 }
 
 function readableText(element: HTMLElement): string {
   return composedText(element).replace(/\s+/gu, " ").trim();
 }
 
+/**
+ * Outermost transcript panels.
+ *
+ * The selector deliberately matches both the engagement panel and the renderers nested inside it,
+ * so a renamed wrapper still leaves something recognizable. Returning every match made each read
+ * scan the same rows once per nesting level; only the outermost element of each panel is a scope.
+ */
 function transcriptPanels(): HTMLElement[] {
-  return deepQueryAll(document, TRANSCRIPT_PANEL_SELECTOR);
+  // YouTube's chaptered "In this video" panel (captured on l8pRSuU81PU) is an engagement panel with
+  // no target-id and none of the ytd-transcript-* wrappers; it is recognizable only by the
+  // transcript rows it holds. Those row components are already trusted by the reader.
+  const holdingRows = deepQueryAll(document, "ytd-engagement-panel-section-list-renderer").filter(
+    (panel) => deepQueryAll(panel, TRANSCRIPT_ROW_SELECTOR).length > 0
+  );
+  const matches = [...new Set([...deepQueryAll(document, TRANSCRIPT_PANEL_SELECTOR), ...holdingRows])];
+  return matches.filter(
+    (candidate) => !matches.some((other) => other !== candidate && composedContains(other, candidate))
+  );
+}
+
+/**
+ * Panels whose rows may be read.
+ *
+ * YouTube keeps a hidden copy of the transcript panel populated — on 96jN2OCOfLs an identical
+ * 893-row list sat in a HIDDEN panel beside the expanded one — and a hidden panel is exactly where a
+ * previous video's rows can survive SPA navigation. When YouTube's visibility attribute is present
+ * on any panel, therefore, only a panel it marks EXPANDED is readable: live, during an SPA
+ * navigation a panel momentarily carried neither value while still holding the previous video's
+ * rows, and treating "no signal" as readable accepted those rows as the new video's transcript.
+ * Markup with no visibility signal anywhere is still read, so an unrecognized future wrapper does
+ * not silently disable capture.
+ */
+function readableTranscriptPanels(): HTMLElement[] {
+  const panels = transcriptPanels().filter((panel) => !panel.hidden && panel.getAttribute("aria-hidden") !== "true");
+  const recognized = panels.some((panel) => panelVisibility(panel) !== "unknown");
+  return panels.filter((panel) => (recognized ? panelVisibility(panel) === "expanded" : true));
 }
 
 function parseTimestampLike(value: string): number | undefined {
@@ -465,30 +613,39 @@ function readRenderedRows(): { cues: TranscriptCue[]; strategy: string } {
   // with a duration badge, so "12:27" followed by a video title matches a timestamped row exactly;
   // scanning the whole page read eight recommended videos as an eight-cue "transcript". Failing
   // honestly is far better than searching the sidebar.
-  const scopes: ParentNode[] = transcriptPanels();
+  const allPanels = transcriptPanels();
+  const scopes: ParentNode[] = readableTranscriptPanels();
 
   let best: { cues: TranscriptCue[]; strategy: string } = { cues: [], strategy: "none" };
 
   for (const scope of scopes) {
     const known = deepQueryAll(scope, TRANSCRIPT_ROW_SELECTOR);
+    if (!known.length) continue;
     const fromKnown = readKnownRows(scope);
     // Rows matched through YouTube's own component names need no minimum: if
     // `transcript-segment-view-model` matched, that *is* a transcript, however short.
     if (fromKnown.length > best.cues.length) {
       best = { cues: fromKnown, strategy: `known(${fromKnown.length}/${known.length})` };
     }
+  }
 
-    // The structural scan keeps its minimum, because a couple of timestamp-shaped elements are
-    // more likely to be page chrome than a transcript.
-    const structural = structuralRows(scope);
-    if (structural.length > best.cues.length) {
-      best = { cues: structural, strategy: `structural(${structural.length})` };
+  // The structural scan exists for a component rename. When YouTube's own row components already
+  // produced a transcript it can only add cost — it was the dominant cost of the 220 s stall.
+  // It keeps its minimum, because a couple of timestamp-shaped elements are more likely to be
+  // page chrome than a transcript.
+  if (!best.cues.length) {
+    for (const scope of scopes) {
+      const structural = structuralRows(scope);
+      if (structural.length > best.cues.length) {
+        best = { cues: structural, strategy: `structural(${structural.length})` };
+      }
     }
   }
 
   // A component rename can leave the panel wrapper unknown while the row family remains specific
-  // and trustworthy. Unlike a whole-document structural scan, this cannot match video cards.
-  if (!scopes.length) {
+  // and trustworthy. Unlike a whole-document structural scan, this cannot match video cards. It
+  // must not run when panels exist but are all hidden: that is where stale rows live.
+  if (!allPanels.length) {
     const globalKnown = readKnownRows(document);
     if (globalKnown.length > best.cues.length) {
       best = { cues: globalKnown, strategy: `known-global(${globalKnown.length})` };
@@ -514,8 +671,13 @@ const MAX_STRUCTURAL_ROW_CHARACTERS = 300;
 /** Any innermost element whose text begins with a timestamp is a row, whatever it is called. */
 function structuralRows(scope: ParentNode): TranscriptCue[] {
   const candidates: Array<{ element: HTMLElement; start: number; text: string }> = [];
+  // A row is a timestamp plus at most one caption line; anything longer cannot be a row, so its
+  // text never needs to be materialized in full. The slack covers the clock and whitespace.
+  const textLimit = MAX_STRUCTURAL_ROW_CHARACTERS * 2 + 32;
   for (const element of deepQueryAll(scope, "*")) {
-    const match = ROW_TEXT.exec(readableText(element));
+    const raw = composedText(element, textLimit);
+    if (raw === undefined) continue;
+    const match = ROW_TEXT.exec(raw.replace(/\s+/gu, " ").trim());
     if (!match) continue;
     const start = parseTimestamp(match[1]!);
     if (start === undefined) continue;
@@ -524,9 +686,19 @@ function structuralRows(scope: ParentNode): TranscriptCue[] {
     candidates.push({ element, start, text });
   }
 
-  const innermost = candidates.filter(
-    (candidate) => !candidates.some((other) => other !== candidate && candidate.element.contains(other.element))
-  );
+  // Innermost = no other candidate below it. Marking every candidate's ancestors is linear in
+  // candidates x depth; the previous all-pairs `contains` test was quadratic and dominated the stall.
+  const hasCandidateBelow = new Set<Node>();
+  for (const candidate of candidates) {
+    for (
+      let current = composedParent(candidate.element);
+      current && current !== scope && !hasCandidateBelow.has(current);
+      current = composedParent(current)
+    ) {
+      hasCandidateBelow.add(current);
+    }
+  }
+  const innermost = candidates.filter((candidate) => !hasCandidateBelow.has(candidate.element));
   if (innermost.length < 3) return [];
 
   // A transcript is rendered in playback order. A grid of unrelated cards carrying duration badges
@@ -564,7 +736,8 @@ export function describeTranscriptDom(): string {
         const tag = element.tagName.toLowerCase();
         tags.set(tag, (tags.get(tag) ?? 0) + 1);
         if (element.shadowRoot) shadowRoots += 1;
-        if (ROW_TEXT.test(readableText(element))) timestamped += 1;
+        const text = composedText(element, MAX_STRUCTURAL_ROW_CHARACTERS * 2 + 32);
+        if (text !== undefined && ROW_TEXT.test(text.replace(/\s+/gu, " ").trim())) timestamped += 1;
         for (const name of Array.from(element.classList)) {
           if (/segment|transcript|caption|timestamp/i.test(name)) {
             classes.set(name, (classes.get(name) ?? 0) + 1);
@@ -591,6 +764,8 @@ export function describeTranscriptDom(): string {
 
 /** Exposed for tests: the reader must be provable against markup we cannot inspect in advance. */
 export const readRenderedRowsForTest = readRenderedRows;
+/** Exposed for tests: cleanup must stay bounded on a real-size transcript. */
+export const closeTranscriptPanelsForTest = () => closeTranscriptPanelOpenedByRecallTube();
 
 /**
  * Whether YouTube's own transcript panel is open, closed-but-openable, or absent.
@@ -598,8 +773,18 @@ export const readRenderedRowsForTest = readRenderedRows;
  * When the timed-text endpoint withholds captions, this panel is the legitimate remaining source:
  * the rows are already rendered in the page for the user's own session.
  */
+/**
+ * Whether a readable transcript panel currently holds rows. The cheapest "is it open?" answer:
+ * one selector query over the transcript panels, no parsing and no search for the control.
+ */
+export function transcriptRowsRendered(): boolean {
+  return hasKnownRows();
+}
+
 export function transcriptPanelState(): "open" | "available" | "unavailable" {
-  if (readRenderedRows().cues.length) return "open";
+  // Called from a MutationObserver while a page has no transcript, i.e. continuously during
+  // playback. A selector query for known rows is enough to say "open"; parsing is the reader's job.
+  if (hasKnownRows()) return "open";
   // The engagement panel is rendered into the DOM up front with
   // visibility="ENGAGEMENT_PANEL_VISIBILITY_HIDDEN", so it is a reliable availability signal that
   // does not depend on the description being expanded. Checking only for the button reported
@@ -675,10 +860,11 @@ function isExpandedTranscriptPanel(panel: HTMLElement): boolean {
   if (panel.hidden || panel.getAttribute("aria-hidden") === "true") return false;
   const style = panel.ownerDocument.defaultView?.getComputedStyle(panel);
   if (style?.display === "none" || style?.visibility === "hidden") return false;
-  const visibility = panel.getAttribute("visibility") ?? "";
-  if (/HIDDEN|COLLAPSED/iu.test(visibility)) return false;
-  if (/EXPANDED|VISIBLE/iu.test(visibility)) return true;
-  return readRenderedRows().cues.length > 0;
+  const visibility = panelVisibility(panel);
+  if (visibility !== "unknown") return visibility === "expanded";
+  // Unrecognized markup: rows present in *this* panel are the open signal. A selector query, not a
+  // parse — this runs inside the close loop.
+  return deepQueryAll(panel, TRANSCRIPT_ROW_SELECTOR).length > 0;
 }
 
 const CLOSE_LABEL =
@@ -706,37 +892,327 @@ function findTranscriptCloseButtons(): HTMLElement[] {
   });
 }
 
+/**
+ * Resolves `true` once `isDone()` holds, re-checking only when `targets` mutate; `false` if it
+ * still does not hold after `timeoutMs` or when `signal` aborts. The check runs because something
+ * changed, not on a clock.
+ */
+function awaitDomCondition(
+  targets: Node[],
+  isDone: () => boolean,
+  timeoutMs: number,
+  signal?: AbortSignal,
+  throttleMs = 0
+): Promise<boolean> {
+  if (isDone()) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    let settled = false;
+    let pending: number | undefined;
+    const check = () => {
+      pending = undefined;
+      if (isDone()) finish(true);
+    };
+    // YouTube mutates the page continuously during playback; a check that queries the whole
+    // document must not run on every batch.
+    const observer = new window.MutationObserver(() => {
+      if (!throttleMs) return check();
+      pending ??= window.setTimeout(check, throttleMs);
+    });
+    const onAbort = () => finish(isDone());
+    const timer = window.setTimeout(() => finish(isDone()), timeoutMs);
+    function finish(value: boolean) {
+      if (settled) return;
+      settled = true;
+      observer.disconnect();
+      window.clearTimeout(timer);
+      if (pending !== undefined) window.clearTimeout(pending);
+      signal?.removeEventListener("abort", onAbort);
+      resolve(value);
+    }
+    const connected = targets.filter((target) => target.isConnected);
+    for (const target of connected.length ? connected : [document.documentElement]) {
+      observer.observe(target, { attributes: true, childList: true, subtree: true });
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 async function closeTranscriptPanelOpenedByRecallTube(): Promise<boolean> {
   const panels = transcriptPanels().filter(isExpandedTranscriptPanel);
   if (!panels.length) return true;
+  const closed = () => panels.every((panel) => !panel.isConnected || !isExpandedTranscriptPanel(panel));
+  // Observe the parents too, so a panel YouTube removes outright is noticed.
+  const observed = panels.map((panel) => composedParent(panel) ?? panel);
 
   for (const button of findTranscriptCloseButtons().slice(0, 4)) {
     button.click();
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      await new Promise((resolve) => window.setTimeout(resolve, 100));
-      if (panels.every((panel) => !panel.isConnected || !isExpandedTranscriptPanel(panel))) return true;
-    }
+    if (await awaitDomCondition(observed, closed, 1_500)) return true;
   }
-  return panels.every((panel) => !panel.isConnected || !isExpandedTranscriptPanel(panel));
+  return closed();
+}
+
+/**
+ * Resolves `true` after `quietMs` pass with no mutation inside `targets`, or `false` if `maxMs`
+ * elapses first. Rejects on abort.
+ */
+function awaitQuiet(targets: Node[], quietMs: number, maxMs: number, signal: AbortSignal): Promise<boolean> {
+  throwIfAborted(signal);
+  return new Promise((resolve, reject) => {
+    let quietTimer = window.setTimeout(() => finish(true), quietMs);
+    const maxTimer = window.setTimeout(() => finish(false), Math.max(quietMs, maxMs));
+    const observer = new window.MutationObserver(() => {
+      window.clearTimeout(quietTimer);
+      quietTimer = window.setTimeout(() => finish(true), quietMs);
+    });
+    const onAbort = () => {
+      cleanup();
+      reject(new Aborted());
+    };
+    function cleanup() {
+      observer.disconnect();
+      window.clearTimeout(quietTimer);
+      window.clearTimeout(maxTimer);
+      signal.removeEventListener("abort", onAbort);
+    }
+    function finish(value: boolean) {
+      cleanup();
+      resolve(value);
+    }
+    for (const target of targets) {
+      observer.observe(target, { attributes: true, characterData: true, childList: true, subtree: true });
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * Structure of the readable transcript scopes, for diagnostics: element name, target id,
+ * visibility and known-row count. Never caption text.
+ */
+function describeReadableScopes(): string {
+  const scopes = readableTranscriptPanels();
+  if (!scopes.length) return "no readable panel";
+  return scopes
+    .map((scope) => {
+      const visibility = (scope.getAttribute("visibility") ?? panelVisibility(scope)).replace("ENGAGEMENT_PANEL_VISIBILITY_", "");
+      return `${scope.tagName.toLowerCase()}[${scope.getAttribute("target-id") ?? "-"}] ${visibility} rows=${deepQueryAll(scope, TRANSCRIPT_ROW_SELECTOR).length}`;
+    })
+    .join("; ");
+}
+
+/**
+ * Every transcript panel's target id, visibility, known-row count and whether YouTube's loader is in
+ * it. Structure only. Used when a capture ends without rows, to show what YouTube actually rendered.
+ */
+function describePanelsForDiagnostics(): string {
+  const panels = transcriptPanels();
+  if (!panels.length) return "none";
+  return panels
+    .map((panel) => {
+      const visibility = panelVisibility(panel);
+      const rows = deepQueryAll(panel, TRANSCRIPT_ROW_SELECTOR).length;
+      const loader = deepQueryAll(panel, "ytd-continuation-item-renderer, tp-yt-paper-spinner[active], yt-content-loading-renderer").length;
+      const message = deepQueryAll(panel, "yt-message-renderer, ytd-message-renderer, yt-alert-with-button-renderer").length;
+      return `${panel.getAttribute("target-id") ?? "-"} ${visibility} rows=${rows} loader=${loader} message=${message}`;
+    })
+    .join(" | ");
+}
+
+/** Whether any readable panel holds rows of a known component family. A query, not a parse. */
+function hasKnownRows(): boolean {
+  return readableTranscriptPanels().some((panel) => deepQueryAll(panel, TRANSCRIPT_ROW_SELECTOR).length > 0);
+}
+
+/** YouTube's own loading indicators inside a readable transcript panel. */
+function transcriptStillLoading(): boolean {
+  return readableTranscriptPanels().some(
+    (panel) =>
+      deepQueryAll(panel, "ytd-continuation-item-renderer, tp-yt-paper-spinner[active], yt-content-loading-renderer").length > 0
+  );
+}
+
+/**
+ * Waiting limits for the native capture are *stall* limits, not fixed durations.
+ *
+ * Live, a 4x-slower CPU with 300 ms latency took YouTube 28 s to deliver a 1,111-row transcript and
+ * the capture 50 s overall; fixed 20 s / 30 s limits there turned a slow but advancing capture into
+ * a failure that a manual retry (with YouTube's resources now cached) then "fixed". A limit restarts
+ * whenever something advances; a hard cap still bounds the whole capture.
+ */
+const ROWS_APPEAR_STALL_MS = 25_000;
+/** YouTube's own loading indicator is progress; this bounds how long it may spin. */
+const ROWS_APPEAR_CAP_MS = 120_000;
+/** A panel is settled once its subtree has been silent this long. */
+const ROWS_QUIET_MS = 750;
+
+/** Known row elements in readable panels. A query, not a parse. */
+function knownRowCount(): number {
+  return readableTranscriptPanels().reduce((total, panel) => total + deepQueryAll(panel, TRANSCRIPT_ROW_SELECTOR).length, 0);
+}
+
+/**
+ * A cheap identity for the rendered list: row count plus the last row's timestamp text.
+ *
+ * Settling used to fully parse every row after each quiet period — on a slow machine that parse, not
+ * YouTube, dominated a 50 s capture. The list is parsed once, after it has stopped changing.
+ */
+function renderedRowsFingerprint(): string {
+  const rows = readableTranscriptPanels().flatMap((panel) => deepQueryAll(panel, TRANSCRIPT_ROW_SELECTOR));
+  const last = rows.at(-1);
+  const clock = last ? deepQueryAll(last, TIMESTAMP_SELECTOR)[0]?.textContent?.trim() ?? last.textContent?.trim().slice(0, 12) : "";
+  return `${rows.length}:${clock}`;
+}
+
+/** Waits for the complete transcript, then parses it once. */
+/**
+ * After YouTube's own transcript request has completed, how long rows may take to render. Live
+ * renders took up to 18 s after a sub-second response; a user's session waited 122 s behind the
+ * loader with no rows at all, which only the request outcome can tell apart from a slow response.
+ */
+const ROWS_AFTER_RESPONSE_MS = 30_000;
+
+/**
+ * Why a rows wait ended without rows, when something other than YouTube's slowness explains it:
+ * its request failed, it answered but rendered nothing, the panel we opened was closed by the page
+ * (YouTube's navigation completion hides every engagement panel), or the only rows on offer are a
+ * list that already existed before the panel was opened — the previous video's.
+ */
+type RowsGiveUp = "youtube-request-failed" | "rendered-nothing-after-response" | "panel-closed" | "stale-rows";
+
+interface RowsWaitOptions {
+  /**
+   * Per-panel fingerprints (row count and last clock) of every transcript panel, hidden ones
+   * included, taken before the control was clicked. A readable list matching one of these was not
+   * rendered for this open: live, after an SPA navigation the expanded panel showed the previous
+   * video's rows for ~3 s until YouTube's `get_transcript` replaced them. Such a list is accepted
+   * only once YouTube has made a transcript request since the open, or once it changes.
+   */
+  staleFingerprints?: Set<string>;
+  /** Milliseconds after the capture started at which the panel was opened. */
+  openedAtMs?: number;
+  /** The panel was opened by RecallTube and must still be expanded; its closing ends the wait. */
+  expectOpen?: boolean;
+}
+
+/** A panel's rendered list identity: row count plus the last row's clock. */
+function panelFingerprint(panel: ParentNode): string {
+  const rows = deepQueryAll(panel, TRANSCRIPT_ROW_SELECTOR);
+  const last = rows.at(-1);
+  const clock = last ? deepQueryAll(last, TIMESTAMP_SELECTOR)[0]?.textContent?.trim() ?? last.textContent?.trim().slice(0, 12) : "";
+  return `${rows.length}:${clock}`;
+}
+
+/** Fingerprints of every transcript panel that currently holds rows, whatever its visibility. */
+function populatedPanelFingerprints(): Set<string> {
+  return new Set(transcriptPanels().map(panelFingerprint).filter((fingerprint) => !fingerprint.startsWith("0:")));
 }
 
 async function settledRenderedRows(
   signal: AbortSignal,
-  maximumAttempts: number
+  capMs: number,
+  onProgress?: AcquisitionContext["onProgress"],
+  timings?: Record<string, number>,
+  /**
+   * Requests belonging to this wait: records from `fromIndex` on. `openedAt` stands in for the response
+   * time when YouTube re-renders a reopened panel from cache without a new request.
+   */
+  requests?: { records: TranscriptRequestRecord[]; startedAt: number; fromIndex: number; openedAt?: number },
+  giveUp?: { reason?: RowsGiveUp },
+  options: RowsWaitOptions = {}
 ): Promise<{ cues: TranscriptCue[]; strategy: string }> {
-  let read = readRenderedRows();
-  let previousFingerprint = "";
-  let stableReads = 0;
+  const hardDeadline = performance.now() + capMs;
+  const remaining = () => Math.max(0, hardDeadline - performance.now());
+  const panelStillOpen = () => !options.expectOpen || transcriptPanels().some(isExpandedTranscriptPanel);
+  const requestSinceOpen = () =>
+    requests?.records.slice(requests.fromIndex).some((entry) => entry.finishedAtMs >= (options.openedAtMs ?? 0)) ?? false;
 
-  for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
-    await delay(150, signal);
-    const next = readRenderedRows();
-    if (next.cues.length > read.cues.length) read = next;
-    const fingerprint = `${next.strategy}:${next.cues.length}:${next.cues.at(-1)?.start ?? -1}`;
-    stableReads = fingerprint === previousFingerprint ? stableReads + 1 : 0;
-    previousFingerprint = fingerprint;
-    if (read.cues.length && stableReads >= 3) break;
+  // Rows appear only after YouTube's own transcript request returns. Wait while that is visibly
+  // in progress (its spinner) or until nothing has happened for the stall limit.
+  const appearStarted = performance.now();
+  onProgress?.("native-rows", 0);
+  const appearDeadline = appearStarted + Math.min(ROWS_APPEAR_CAP_MS, remaining());
+  let stallDeadline = performance.now() + ROWS_APPEAR_STALL_MS;
+  while (!hasKnownRows() && performance.now() < Math.min(appearDeadline, stallDeadline)) {
+    await awaitDomCondition(
+      [document.documentElement],
+      hasKnownRows,
+      Math.min(2_000, Math.max(0, appearDeadline - performance.now())),
+      signal,
+      250
+    );
+    throwIfAborted(signal);
+    if (!panelStillOpen()) {
+      if (giveUp) giveUp.reason = "panel-closed";
+      break;
+    }
+    if (requests) {
+      const relevant = requests.records.slice(requests.fromIndex);
+      if (relevant.some((entry) => entry.status !== undefined && entry.status >= 400)) {
+        if (giveUp) giveUp.reason = "youtube-request-failed";
+        break;
+      }
+      const lastResponse = relevant.filter((entry) => entry.status === undefined || entry.status < 400).at(-1);
+      const respondedAt = lastResponse ? requests.startedAt + lastResponse.finishedAtMs : requests.openedAt;
+      if (respondedAt !== undefined && performance.now() - respondedAt > ROWS_AFTER_RESPONSE_MS) {
+        if (giveUp) giveUp.reason = "rendered-nothing-after-response";
+        break;
+      }
+    }
+    if (transcriptStillLoading()) {
+      if (timings) timings.loaderSeen = Math.round(performance.now() - appearStarted);
+      stallDeadline = performance.now() + ROWS_APPEAR_STALL_MS;
+      // Tell a waiting caller this is still advancing: live, the page was correctly waiting on
+      // YouTube's spinner for 40-114 s while the coordinator saw no change and gave up at 45 s.
+      onProgress?.("native-rows", 0, document.visibilityState === "hidden");
+    } else if (document.visibilityState === "hidden") {
+      onProgress?.("native-rows", 0, true);
+    }
   }
+  if (timings) timings.rows = Math.round(performance.now() - appearStarted);
+
+  const settleStarted = performance.now();
+  let fingerprint = hasKnownRows() ? renderedRowsFingerprint() : "";
+  if (fingerprint) {
+    onProgress?.("native-settle", knownRowCount());
+    while (remaining() > 0) {
+      const panels = readableTranscriptPanels();
+      const quiet = await awaitQuiet(
+        panels.length ? panels : [document.documentElement],
+        ROWS_QUIET_MS,
+        Math.min(remaining(), ROWS_APPEAR_STALL_MS),
+        signal
+      );
+      const next = renderedRowsFingerprint();
+      const unchanged = next === fingerprint;
+      if (!unchanged) onProgress?.("native-settle", knownRowCount());
+      fingerprint = next;
+      if (!panelStillOpen()) {
+        if (giveUp) giveUp.reason = "panel-closed";
+        if (timings) timings.settle = Math.round(performance.now() - settleStarted);
+        return { cues: [], strategy: "panel-closed" };
+      }
+      if (!(quiet && unchanged && !transcriptStillLoading())) continue;
+      // A settled list identical to one that existed before the open is the previous video's unless
+      // YouTube has fetched a transcript since. Keep waiting for it to change, bounded; a user would
+      // rather see "not yet" than another video's transcript.
+      if (options.staleFingerprints?.has(next) && !requestSinceOpen()) {
+        if (performance.now() - settleStarted > ROWS_APPEAR_STALL_MS) {
+          if (giveUp) giveUp.reason = "stale-rows";
+          if (timings) timings.settle = Math.round(performance.now() - settleStarted);
+          return { cues: [], strategy: "stale-rows" };
+        }
+        onProgress?.("native-settle", knownRowCount());
+        continue;
+      }
+      break;
+    }
+  }
+  if (timings) timings.settle = Math.round(performance.now() - settleStarted);
+
+  const readStarted = performance.now();
+  onProgress?.("native-read", knownRowCount());
+  const read = readRenderedRows();
+  if (timings) timings.read = Math.round(performance.now() - readStarted);
   return read;
 }
 
@@ -785,7 +1261,11 @@ export class PlayerTrackAdapter implements TranscriptAdapter {
 
     let pageData: PageDataPayload | undefined;
     // The player response can lag a frame or two behind yt-navigate-finish.
-    for (let attempt = 0; attempt < 3 && !pageData?.captionTracks.length; attempt += 1) {
+    // Inactive playlist worker tabs initialize YouTube's player more slowly than a foreground tab.
+    // Keep polling the already-loaded page data for a few seconds before concluding there is no
+    // track; this performs no extra network request and also hardens cold single-video loads.
+    const playerAttempts = 10;
+    for (let attempt = 0; attempt < playerAttempts && !pageData?.captionTracks.length; attempt += 1) {
       throwIfAborted(signal);
       try {
         pageData = await requestPageData(signal);
@@ -793,11 +1273,28 @@ export class PlayerTrackAdapter implements TranscriptAdapter {
         if (error instanceof Aborted) throw error;
         pageData = undefined;
       }
-      if (!pageData?.captionTracks.length && attempt < 2) await delay(250 * (attempt + 1), signal);
+      if (!pageData?.captionTracks.length && attempt < playerAttempts - 1) {
+        await delay(Math.min(1_000, 250 * (attempt + 1)), signal);
+      }
+    }
+
+    if (!pageData?.captionTracks.length) {
+      const serialized = await requestSerializedPageData(signal).catch(() => undefined);
+      if (serialized?.captionTracks.length) pageData = serialized;
     }
 
     if (!pageData) return fail("not-ready", "The YouTube player did not answer the page bridge.");
-    if (!pageData.captionTracks.length) return fail("no-captions", "The player exposed no caption tracks.");
+    if (!pageData.captionTracks.length) {
+      // A removed, private or not-yet-started video advertises no track *and* will never build a
+      // transcript control. Without this verdict the native stage waited up to 90 s for one on a page
+      // that YouTube itself had already declared unplayable, then reported "no captions".
+      const unavailable = playabilityFailure(pageData.playability);
+      if (unavailable) {
+        diagnostics.push({ adapter: this.id, outcome: "failed", detail: unavailable.detail, elapsedMs: performance.now() - started });
+        return { ok: false, reason: unavailable.reason, diagnostics, terminal: true };
+      }
+      return fail("no-captions", "The player exposed no caption tracks.");
+    }
 
     const track = preferredTrack(pageData.captionTracks, context.preferredLanguage);
     if (!track) return fail("track-unavailable", "No caption track matched the requested language.");
@@ -865,45 +1362,158 @@ export class NativePanelTranscriptAdapter implements TranscriptAdapter {
   async acquire(context: AcquisitionContext, signal: AbortSignal): Promise<AcquisitionResult> {
     const started = performance.now();
     const diagnostics: AdapterDiagnostic[] = [];
-    const initiallyOpen =
-      readRenderedRows().cues.length > 0 || transcriptPanels().some(isExpandedTranscriptPanel);
+    const initiallyOpen = hasKnownRows() || transcriptPanels().some(isExpandedTranscriptPanel);
     let openedByRecallTube = false;
+    let controlFound = initiallyOpen;
+    let scopeDescription = "not read";
     let closed = true;
-    let read = readRenderedRows();
+    let read: { cues: TranscriptCue[]; strategy: string } = { cues: [], strategy: "none" };
+    const timings: Record<string, number> = {};
+    const mark = (name: string, since: number) => {
+      timings[name] = Math.round(performance.now() - since);
+    };
+    const requests = observeTranscriptRequests(started);
+    let panelAtEnd = "not described";
+    let rowsGiveUp: RowsGiveUp | undefined;
+    let reopened = false;
+    let buttons: HTMLElement[] = [];
+    let staleFingerprints: Set<string> | undefined;
+    let openedAtMs: number | undefined;
+    // Whether the page was hidden while it waited. An occluded or minimized window reports "hidden",
+    // and YouTube may defer work in a hidden page.
+    const visibility = { atStart: document.visibilityState, changes: 0, hiddenMs: 0, hiddenSince: document.visibilityState === "hidden" ? performance.now() : undefined as number | undefined };
+    const onVisibility = () => {
+      visibility.changes += 1;
+      if (document.visibilityState === "hidden") visibility.hiddenSince = performance.now();
+      else if (visibility.hiddenSince !== undefined) {
+        visibility.hiddenMs += performance.now() - visibility.hiddenSince;
+        visibility.hiddenSince = undefined;
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    const describeVisibility = () => {
+      const hiddenMs = Math.round(visibility.hiddenMs + (visibility.hiddenSince !== undefined ? performance.now() - visibility.hiddenSince : 0));
+      return `page ${visibility.atStart} at start, ${document.visibilityState} at end, hidden ${hiddenMs}ms, ${visibility.changes} changes`;
+    };
 
     try {
       if (!initiallyOpen) {
+        const controlStarted = performance.now();
+        context.onProgress?.("native-control");
+        // Lists that exist before this attempt touches anything belong to an earlier open or an
+        // earlier video. Taken now, not at the click: rows that YouTube (or the user) renders while
+        // the control is still awaited are new and must stay acceptable.
+        staleFingerprints = populatedPanelFingerprints();
         deepQueryAll(
           document,
           "ytd-text-inline-expander #expand, tp-yt-paper-button#expand, #description-inline-expander #expand"
         )[0]?.click();
 
-        let buttons: HTMLElement[] = [];
-        for (let attempt = 0; attempt < 12 && !buttons.length; attempt += 1) {
+        // The control is built after the description expands; wait for it rather than sleeping.
+        //
+        // On a slow machine the watch page itself can take longer than any fixed limit to build:
+        // live at 4x CPU the control took up to 33 s, and a 15 s limit reported videos with captions
+        // as having none. While YouTube is still building the page — no watch metadata or description
+        // yet — that is progress; the stall limit applies once the page is built and the control is
+        // still absent.
+        buttons = findTranscriptButtons();
+        const controlCap = controlStarted + TRANSCRIPT_CONTROL_CAP_MS;
+        let controlStall = performance.now() + TRANSCRIPT_CONTROL_TIMEOUT_MS;
+        // Rows that appear meanwhile (a panel the page opened itself) end the wait: they are the transcript.
+        while (!buttons.length && !hasKnownRows() && performance.now() < Math.min(controlCap, controlStall)) {
+          await awaitDomCondition(
+            [document.documentElement],
+            () => findTranscriptButtons().length > 0 || hasKnownRows(),
+            Math.min(2_000, Math.max(0, controlCap - performance.now())),
+            signal,
+            200
+          );
           throwIfAborted(signal);
           buttons = findTranscriptButtons();
-          if (!buttons.length) await delay(200, signal);
+          if (!buttons.length && !hasKnownRows()) {
+            deepQueryAll(
+              document,
+              "ytd-text-inline-expander #expand, tp-yt-paper-button#expand, #description-inline-expander #expand"
+            )[0]?.click();
+            if (watchPageStillBuilding()) {
+              controlStall = performance.now() + TRANSCRIPT_CONTROL_TIMEOUT_MS;
+              context.onProgress?.("native-control");
+            }
+          }
         }
+        controlFound = buttons.length > 0;
+        mark("control", controlStarted);
 
-        for (const button of buttons.slice(0, 4)) {
+        const openStarted = performance.now();
+        context.onProgress?.("native-open");
+        const panelOpen = () => transcriptPanels().some(isExpandedTranscriptPanel);
+        // Rows already rendered need no control; opening one would create a panel we then close.
+        for (const button of hasKnownRows() ? [] : buttons.slice(0, 4)) {
           throwIfAborted(signal);
           // If the user opened it while we waited, their panel is not ours to close.
-          if (transcriptPanels().some(isExpandedTranscriptPanel)) break;
+          if (panelOpen()) break;
           openedByRecallTube = true;
           button.click();
-          for (let attempt = 0; attempt < 12; attempt += 1) {
-            await delay(150, signal);
-            read = readRenderedRows();
-            if (read.cues.length || transcriptPanels().some(isExpandedTranscriptPanel)) break;
-          }
-          if (read.cues.length || transcriptPanels().some(isExpandedTranscriptPanel)) break;
+          if (await awaitDomCondition([document.documentElement], panelOpen, PANEL_OPEN_TIMEOUT_MS, signal, 100)) break;
+          throwIfAborted(signal);
         }
+        openedAtMs = performance.now() - started;
+        mark("open", openStarted);
       }
 
-      if (read.cues.length || transcriptPanels().some(isExpandedTranscriptPanel)) {
-        read = await settledRenderedRows(signal, 30);
+      if (transcriptPanels().some(isExpandedTranscriptPanel) || hasKnownRows()) {
+        const giveUp: { reason?: RowsGiveUp } = {};
+        read = await settledRenderedRows(
+          signal,
+          NATIVE_CAPTURE_CAP_MS,
+          context.onProgress,
+          timings,
+          { records: requests.records, startedAt: started, fromIndex: 0 },
+          giveUp,
+          { staleFingerprints, openedAtMs, expectOpen: openedByRecallTube }
+        );
+        rowsGiveUp = giveUp.reason;
+        // YouTube answered but rendered nothing, closed the panel we opened (its navigation
+        // completion hides every engagement panel), or left only a previous video's rows in it:
+        // close what is left and open it once more, which makes YouTube render (and if needed
+        // request) the list again — after a pause, so a navigation still finishing can do so first.
+        const reopenable: RowsGiveUp[] = ["rendered-nothing-after-response", "panel-closed", "stale-rows"];
+        if (!read.cues.length && giveUp.reason && reopenable.includes(giveUp.reason) && openedByRecallTube && buttons.length) {
+          reopened = true;
+          await closeTranscriptPanelOpenedByRecallTube().catch(() => false);
+          await delay(REOPEN_PAUSE_MS, signal);
+          const reopenIndex = requests.records.length;
+          const reopenedAt = performance.now();
+          const panelOpen = () => transcriptPanels().some(isExpandedTranscriptPanel);
+          // YouTube may have re-rendered the description meanwhile; a stored button can be detached.
+          const current = findTranscriptButtons();
+          for (const button of (current.length ? current : buttons).slice(0, 4)) {
+            if (!button.isConnected) continue;
+            button.click();
+            if (await awaitDomCondition([document.documentElement], panelOpen, PANEL_OPEN_TIMEOUT_MS, signal, 100)) break;
+          }
+          throwIfAborted(signal);
+          if (panelOpen()) {
+            const retryGiveUp: { reason?: RowsGiveUp } = {};
+            read = await settledRenderedRows(
+              signal,
+              NATIVE_CAPTURE_CAP_MS,
+              context.onProgress,
+              timings,
+              { records: requests.records, startedAt: started, fromIndex: reopenIndex, openedAt: reopenedAt },
+              retryGiveUp,
+              { staleFingerprints, openedAtMs: reopenedAt - started, expectOpen: true }
+            );
+            rowsGiveUp = retryGiveUp.reason;
+          }
+        }
+        // Described while still open; cleanup below hides it.
+        scopeDescription = describeReadableScopes();
       }
+      panelAtEnd = describePanelsForDiagnostics();
     } finally {
+      requests.stop();
+      document.removeEventListener("visibilitychange", onVisibility);
       // Cleanup must survive cancellation, so it deliberately does not use the caller's signal.
       if (openedByRecallTube) {
         closed = await closeTranscriptPanelOpenedByRecallTube().catch(() => false);
@@ -915,19 +1525,24 @@ export class NativePanelTranscriptAdapter implements TranscriptAdapter {
       diagnostics.push({
         adapter: this.id,
         outcome: "failed",
-        detail: `Native transcript capture produced no rows (panel ${finalPanelState}); cleanup ${
-          closed ? "completed" : "could not find a close control"
-        }.`,
+        detail: `Native transcript capture produced no rows (control ${controlFound ? "found" : "not found"}, opened ${
+          openedByRecallTube ? "by RecallTube" : initiallyOpen ? "by user" : "no"
+        }, panel ${finalPanelState}, ${describeTimings(timings)}${rowsGiveUp ? `, stopped: ${rowsGiveUp}` : ""}${reopened ? ", reopened once" : ""}; ${describeTranscriptRequests(requests.records)}; ${describeVisibility()}; panels: ${panelAtEnd}); cleanup ${closed ? "completed" : "could not find a close control"}.`,
         elapsedMs: performance.now() - started,
       });
-      return { ok: false, reason: finalPanelState === "unavailable" ? "no-captions" : "not-ready", diagnostics };
+      return {
+        ok: false,
+        // A failed or unrendered YouTube response is transient, never evidence of missing captions.
+        reason: rowsGiveUp ? "not-ready" : finalPanelState === "unavailable" ? "no-captions" : "not-ready",
+        diagnostics,
+      };
     }
 
     const transcript = await transcriptFromRenderedCues(context, read.cues);
     diagnostics.push({
       adapter: this.id,
       outcome: "ok",
-      detail: `${transcript.cues.length} cues captured via ${read.strategy}; panel ${
+      detail: `${transcript.cues.length} cues captured from ${read.cues.length} rendered rows via ${read.strategy} (${scopeDescription}; ${describeTimings(timings)}; ${describeTranscriptRequests(requests.records)}; ${describeVisibility()}); panel ${
         initiallyOpen ? "was already open and was preserved" : closed ? "was restored" : "cleanup failed"
       }.`,
       elapsedMs: performance.now() - started,
@@ -956,20 +1571,10 @@ export class RenderedTranscriptAdapter implements TranscriptAdapter {
     // The panel populates asynchronously after it opens, so give it a moment before concluding
     // there is nothing there — but only if it looks like it is on its way.
     let read = readRenderedRows();
-    if (transcriptPanels().length) {
-      let previousFingerprint = "";
-      let stableReads = 0;
-      // Do not snapshot the first row that appears. Transcript components populate in batches,
-      // especially on long videos; keep the fullest valid read until the DOM settles briefly.
-      for (let attempt = 0; attempt < 12; attempt += 1) {
-        await delay(150, signal);
-        const next = readRenderedRows();
-        if (next.cues.length > read.cues.length) read = next;
-        const fingerprint = `${next.strategy}:${next.cues.length}:${next.cues.at(-1)?.start ?? -1}`;
-        stableReads = fingerprint === previousFingerprint ? stableReads + 1 : 0;
-        previousFingerprint = fingerprint;
-        if (read.cues.length && stableReads >= 2) break;
-      }
+    // Only a panel that is already open is read here; this adapter never opens YouTube UI. Do not
+    // snapshot the first rows that appear: components populate in batches on long videos.
+    if (readableTranscriptPanels().length && (read.cues.length || hasKnownRows())) {
+      read = await settledRenderedRows(signal, 5_000, context.onProgress);
     }
     const raw = read.cues;
 
@@ -1031,6 +1636,90 @@ export class RenderedTranscriptAdapter implements TranscriptAdapter {
   }
 }
 
+/**
+ * YouTube's own transcript requests made while a native capture runs, observed through Resource
+ * Timing: endpoint, HTTP status, duration and body size only — never URLs, headers or bodies.
+ *
+ * A user's diagnostics showed two videos whose panel opened in under a second and then waited 122 s
+ * behind YouTube's loader without a single row. Whether YouTube's request failed, was never sent, or
+ * succeeded without rendering cannot be told from the DOM; this records it.
+ */
+export interface TranscriptRequestRecord {
+  endpoint: "get_transcript" | "get_panel";
+  status?: number;
+  durationMs: number;
+  bytes?: number;
+  /** Milliseconds after the capture started that the response finished. */
+  finishedAtMs: number;
+}
+
+function observeTranscriptRequests(startedAt: number): { records: TranscriptRequestRecord[]; stop: () => void } {
+  const records: TranscriptRequestRecord[] = [];
+  const record = (entry: PerformanceEntry) => {
+    const endpoint = /\/youtubei\/v1\/get_transcript/u.test(entry.name)
+      ? "get_transcript"
+      : /\/youtubei\/v1\/get_panel/u.test(entry.name)
+        ? "get_panel"
+        : undefined;
+    if (!endpoint || entry.startTime + entry.duration < startedAt) return;
+    const timing = entry as PerformanceResourceTiming & { responseStatus?: number };
+    records.push({
+      endpoint,
+      status: typeof timing.responseStatus === "number" && timing.responseStatus > 0 ? timing.responseStatus : undefined,
+      durationMs: Math.round(entry.duration),
+      bytes: typeof timing.encodedBodySize === "number" && timing.encodedBodySize > 0 ? timing.encodedBodySize : undefined,
+      finishedAtMs: Math.round(entry.startTime + entry.duration - startedAt),
+    });
+  };
+  let observer: PerformanceObserver | undefined;
+  try {
+    const Observer = (window as unknown as { PerformanceObserver?: typeof PerformanceObserver }).PerformanceObserver;
+    if (Observer) {
+      observer = new Observer((list) => list.getEntries().forEach(record));
+      observer.observe({ type: "resource", buffered: false });
+    }
+  } catch {
+    observer = undefined;
+  }
+  return { records, stop: () => observer?.disconnect() };
+}
+
+export function describeTranscriptRequests(records: TranscriptRequestRecord[]): string {
+  if (!records.length) return "YouTube transcript requests: none observed";
+  return `YouTube transcript requests: ${records
+    .map((entry) => `${entry.endpoint} ${entry.status ?? "status?"} ${entry.durationMs}ms ${entry.bytes ?? 0}B at ${entry.finishedAtMs}ms`)
+    .join("; ")}`;
+}
+
+/** Measured phase durations, e.g. "control 900ms, open 120ms, rows 12000ms, settle 2300ms, read 180ms". */
+function describeTimings(timings: Record<string, number>): string {
+  const order = ["control", "open", "rows", "settle", "read", "loaderSeen"];
+  const entries = Object.entries(timings).sort(([left], [right]) => order.indexOf(left) - order.indexOf(right));
+  return entries.length ? entries.map(([name, ms]) => `${name} ${ms}ms`).join(", ") : "no timings";
+}
+
+/** Once the watch page is built, how long its transcript control may stay absent. */
+const TRANSCRIPT_CONTROL_TIMEOUT_MS = 15_000;
+/** Absolute bound on waiting for the control, however slowly the page is still being built. */
+const TRANSCRIPT_CONTROL_CAP_MS = 90_000;
+
+/**
+ * Whether this is YouTube’s watch app still rendering the area the transcript control lives in.
+ *
+ * Only a page that *is* the watch app (`ytd-watch-flexy`) and has not yet rendered its description
+ * counts. A page that never builds a description is not "still building", and waiting on it would
+ * only delay reading rows that are already there.
+ */
+function watchPageStillBuilding(): boolean {
+  if (!deepQueryAll(document, "ytd-watch-flexy").length) return false;
+  return !deepQueryAll(document, "ytd-watch-metadata #description, ytd-text-inline-expander, #description-inline-expander").length;
+}
+const PANEL_OPEN_TIMEOUT_MS = 5_000;
+/** Before reopening a panel YouTube closed or left stale, so a navigation still finishing can settle. */
+const REOPEN_PAUSE_MS = 1_500;
+/** Hard cap on waiting for rows plus settling. The stall limits above normally end it far sooner. */
+const NATIVE_CAPTURE_CAP_MS = 150_000;
+
 /** Ordered strongest-first; native UI is touched only after the direct caption route fails. */
 export const DEFAULT_ADAPTERS: TranscriptAdapter[] = [
   new PlayerTrackAdapter(),
@@ -1041,13 +1730,14 @@ export const DEFAULT_ADAPTERS: TranscriptAdapter[] = [
 /** Which failure to report when every adapter failed: the most specific one wins. */
 const REASON_PRIORITY: AcquisitionFailureReason[] = [
   "permission-denied",
+  "video-unavailable",
   "captions-withheld",
   "network-error",
   "parse-error",
   "track-unavailable",
   "unsupported",
-  "not-ready",
   "no-captions",
+  "not-ready",
 ];
 
 export async function acquireTranscript(
@@ -1076,6 +1766,8 @@ export async function acquireTranscript(
       diagnostics.push(...result.diagnostics);
       if (result.ok) return { ...result, diagnostics };
       reasons.push(result.reason);
+      // The player has said the video is unavailable: opening its transcript UI cannot help.
+      if (result.terminal) return { ok: false, reason: result.reason, diagnostics, terminal: true };
     } catch (error) {
       if (error instanceof Aborted || signal.aborted) {
         return { ok: false, reason: "navigation-cancelled", diagnostics };

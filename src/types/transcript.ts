@@ -66,6 +66,11 @@ export type AcquisitionFailureReason =
   | "network-error"
   | "parse-error"
   | "permission-denied"
+  /**
+   * The player itself reports the video as removed or not playable here (`playabilityStatus`
+   * `ERROR`/`UNPLAYABLE`). Terminal: there is no caption track and no transcript control to wait for.
+   */
+  | "video-unavailable"
   | "unsupported";
 
 export interface AdapterDiagnostic {
@@ -77,6 +82,20 @@ export interface AdapterDiagnostic {
 
 export type PageStatus = "idle" | "loading" | "ready" | "failed";
 
+/**
+ * Where a long acquisition currently is. Reported while `loading` so a waiting caller can tell a
+ * slow capture that is still advancing from one that has stalled. Structure only, never text.
+ */
+export interface AcquisitionProgress {
+  phase: "direct" | "native-control" | "native-open" | "native-rows" | "native-settle" | "native-read";
+  /** Rendered transcript row elements seen so far, when known. */
+  rows?: number;
+  /** True when the page reported itself hidden (minimized or occluded) at this report. */
+  hidden?: boolean;
+  /** `Date.now()` of the last change. */
+  at: number;
+}
+
 export interface PageSnapshot {
   status: PageStatus;
   videoId?: string;
@@ -84,9 +103,13 @@ export interface PageSnapshot {
   generation: number;
   document?: TranscriptDocument;
   reason?: AcquisitionFailureReason;
+  /** The failure cannot be helped by any other adapter or stage (the player says the video is unavailable). */
+  terminal?: boolean;
   diagnostics?: AdapterDiagnostic[];
   /** Structural state used by diagnostics and the automatic native-panel fallback. */
   transcriptPanel?: "open" | "available" | "unavailable";
+  /** Present while `loading`; see {@link AcquisitionProgress}. */
+  progress?: AcquisitionProgress;
 }
 
 /**

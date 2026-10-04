@@ -7,8 +7,8 @@ different language from the one spoken. RecallTube has to turn that description 
 
 Everything below follows from three constraints:
 
-1. **Nothing leaves the device.** No server means retrieval must run in a browser tab, over one
-   transcript, within a keystroke's worth of time.
+1. **Nothing leaves the device.** No server means retrieval must run in the extension over one
+   transcript or a bounded local playlist corpus, within a keystroke's worth of time.
 2. **Captions are unofficial and hostile-adjacent.** YouTube does not offer a caption API for
    extensions. What we can read is page state, which any script on the page can also write.
 3. **The product must be useful without AI.** A 118 MB model download cannot be the price of entry.
@@ -37,7 +37,22 @@ Everything below follows from three constraints:
   └──────────────────────────────────────────┘
 ```
 
-The background service worker does one thing: make the toolbar action open the side panel.
+The background service worker opens the side panel and owns resumable playlist acquisition jobs.
+Each job reuses cached transcripts first, then processes missing videos serially through one muted,
+minimized worker at a time. Every item starts in a fresh document and uses the same direct-caption
+path as a single video, with playback paused. A withheld response shows that worker as a small
+(720×540) unfocused window in the bottom-right corner of the window that had focus — measured on
+2026-09-16, a minimized window never builds YouTube's transcript control while an unfocused normal
+one captures every row — and capture closes the panel and worker. Focus is given back only if the
+window manager activated the worker anyway. A direct failure the player itself explains
+(`playabilityStatus` `ERROR`, `UNPLAYABLE`, `LOGIN_REQUIRED`, a live stream) is terminal: no native
+stage runs and the worker is never shown for it. The content script learns it is a worker by asking the
+background whether its tab id is session-owned; a URL marker would let any link change how an
+ordinary tab acquires. Restoring can replace the worker's document, so the native request is tracked
+by document id and generation and re-issued to a replacement document.
+Persisting every transition in IndexedDB lets MV3 suspension resume only the interrupted item.
+Terminal paths close the exact recorded worker tab/window; no URL-wide cleanup can touch a
+user-owned YouTube tab.
 
 ## Module map
 
@@ -50,6 +65,10 @@ The background service worker does one thing: make the toolbar action open the s
 | `src/transcript/flatten.ts` | Cross-cue flattened index + offset-mapped highlight resolution |
 | `src/transcript/chunk.ts` | Multi-scale, sentence-aware chunking |
 | `src/transcript/acquire.ts` | Player-track → owned native-panel → rendered-row adapters, with cancellation, cleanup and diagnostics |
+| `src/transcript/player-bootstrap.ts` | Bounded JSON extraction from cold-page bootstrap scripts, without evaluation |
+| `src/playlist/inventory.ts` | Bounded playlist discovery from bootstrap data and rendered rows |
+| `src/playlist/coordinator.ts` | Persistent serial queue, cache reuse, pause/resume/cancel/retry and worker ownership |
+| `src/playlist/search.ts` | Per-video retrieval composition and cross-video ranking with provenance |
 | `src/search/exact-search.ts` | All-occurrence phrase matching with highlights |
 | `src/search/lexical-search.ts` | BM25 + character n-grams |
 | `src/search/hybrid-ranker.ts` | Weighted RRF, temporal diversification, match labels |
@@ -60,10 +79,52 @@ The background service worker does one thing: make the toolbar action open the s
 | `src/ai/model-manager` (in worker) | Single model instance, backend selection, cancellation |
 | `src/ai/runtime/ort-env.ts` | Pins ONNX Runtime to the packaged copies |
 | `src/ask/` | Evidence-grounded answers, prompt construction, schema validation |
-| `src/storage/indexeddb.ts` | Transcript and embedding caches, eviction, user data controls |
+| `src/storage/indexeddb.ts` | Transcript, embedding, playlist and job caches, eviction, user data controls |
 
 `src/transcript`, `src/search` and `src/ask` contain no browser-extension APIs, which is why the
 benchmark and the performance harness can import them directly under Node.
+
+## Playlist pipeline
+
+```text
+YouTube playlist/watch page
+        │ bootstrap + rendered inventory (no Data API)
+        ▼
+persistent playlist job ──► cached transcript? ──► ready
+        │ no
+        ▼
+fresh minimized worker ──────► player track ──► native transcript fallback
+        │                                         │ withheld only
+        │                                         ▼
+        │                         restore unfocused + render
+        │                                      │
+        └──────── save result/state ◄── close panel + worker ──┘
+                       │
+                       ├─ partial exact/meaning/Ask corpus
+                       └─ next video, then close worker
+```
+
+Only one acquisition job runs globally. Starting another playlist explicitly hands off from the
+old job, and pause/cancel/restart cleanup uses persisted tab and window ids. Search never concatenates
+videos into one anonymous transcript: every result retains video id, title, playlist position and
+timestamp so navigation and citations remain auditable.
+
+## Acquisition timing on YouTube's SPA
+
+Measured live on 2026-10-03 (Chromium 151): a navigation fires `yt-navigate-start`,
+`yt-player-updated`, `yt-navigate-finish`, then `yt-page-data-updated` 0.3–1.4 s later, and about
+half a second after that YouTube hides every engagement panel. A Back/Forward navigation fires
+`popstate` roughly a second before `yt-navigate-finish`. Two consequences shape the content script:
+
+- A history change waits for `yt-navigate-finish` (bounded 3 s), and every navigation-triggered
+  acquisition waits for `yt-page-data-updated` plus a 1 s settle (bounded 2.5 s) before the native
+  stage may open the transcript panel. Opening it earlier lost the panel to that hide and left
+  YouTube never fetching the transcript.
+- The expanded panel shows the *previous* video's rows for several seconds until `get_transcript`
+  replaces them. The capture fingerprints every panel's list before opening and accepts a matching
+  list only once it changes or YouTube has made a transcript request since the open; otherwise the
+  attempt ends as `stale-rows` and is retried, never recorded as another video's transcript. When
+  YouTube's visibility attribute is present, only an EXPANDED panel is readable at all.
 
 ## The retrieval pipeline
 
@@ -138,8 +199,9 @@ wrong video:
 
 - **Acquisition** — an `AbortController` per attempt; a new navigation aborts the previous one
   rather than merely ignoring its eventual result.
-- **Panel ↔ tab** — snapshots carry `{ tabId, videoId, generation }`; the panel drops anything that
-  does not match what it currently wants.
+- **Panel ↔ tab** — snapshots carry `{ tabId, videoId, generation, documentId }`; the panel drops
+  anything for another tab or video, and compares generations only within one page document — they
+  restart at 1 whenever the page is replaced (`sidepanel/snapshot-policy.ts`).
 - **Worker** — every request has an id; search results carry the `transcriptId` they were computed
   for and are rejected if it does not match, and cancellation is a message the worker acts on.
 
